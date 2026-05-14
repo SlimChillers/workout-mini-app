@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>PF Workout</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --tg-bg: #0d0d0d;
+      --tg-text: #f5f5f5;
+      --tg-hint: #888888;
+      --tg-button: #ff5c3c;
+      --tg-button-text: #ffffff;
+      --tg-secondary: #1a1a1a;
+      --accent: #ff5c3c;
+      --accent-glow: rgba(255,92,60,0.15);
+      --surface: #141414;
+      --surface-raised: #1c1c1c;
+      --border: rgba(255,255,255,0.06);
+      --border-active: rgba(255,255,255,0.12);
+      --success: #34c759;
+      --text-secondary: #999999;
+      --radius: 14px;
+      --radius-sm: 10px;
+      --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--tg-bg);
+      color: var(--tg-text);
+      padding: 0;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .header {
+      padding: 20px 20px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 19px;
+      flex-shrink: 0;
+    }
+    .header-title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+    .header-date {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 400;
+      letter-spacing: -0.1px;
+    }
+
+    /* ── Day Switcher ── */
+    .day-switcher {
+      display: flex;
+      gap: 6px;
+      padding: 16px 20px 0;
+    }
+    .day-btn {
+      flex: 1;
+      padding: 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--transition);
+      font-family: inherit;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .day-btn:active { transform: scale(0.97); }
+    .day-btn.active {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .day-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      opacity: 0.6;
+      margin-bottom: 3px;
+    }
+    .day-name {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    /* ── Scrollable Content ── */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 20px 100px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* ── Exercise Card ── */
+    .exercise-card {
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 10px;
+      transition: all var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+    .exercise-card.skipped {
+      opacity: 0.4;
+      background: var(--surface);
+    }
+    .exercise-card.skipped .ex-header {
+      text-decoration: line-through;
+      text-decoration-color: rgba(255,255,255,0.2);
+    }
+    .ex-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .ex-name {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+    }
+    .ex-meta {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .skip-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .skip-toggle input { display: none; }
+    .skip-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid var(--border-active);
+      transition: all var(--transition);
+      flex-shrink: 0;
+    }
+    .skip-toggle input:checked + .skip-dot {
+      background: var(--border-active);
+      border-color: var(--border-active);
+    }
+    .skip-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* ── Input Row ── */
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+    .input-group {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .input-group label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .input-group input {
+      padding: 11px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--tg-text);
+      font-size: 16px;
+      font-weight: 500;
+      width: 100%;
+      font-family: inherit;
+      transition: all var(--transition);
+      -webkit-appearance: none;
+      appearance: none;
+      text-align: center;
+    }
+    .input-group input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .input-group input:disabled {
+      opacity: 0.3;
+      pointer-events: none;
+    }
+    .input-group input::placeholder {
+      color: #444;
+      font-weight: 400;
+    }
+
+    /* ── Section Divider ── */
+    .section-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-secondary);
+      font-weight: 600;
+      margin: 20px 0 10px;
+      padding: 0 4px;
+    }
+
+    /* ── Cardio Card ── */
+    .cardio-card {
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .cardio-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      letter-spacing: -0.2px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .cardio-icon { font-size: 18px; }
+    .cardio-row {
+      display: flex;
+      gap: 8px;
+    }
+    .cardio-row .input-group {
+      flex: 1;
+    }
+    .cardio-row select {
+      padding: 11px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--tg-text);
+      font-size: 15px;
+      font-weight: 500;
+      width: 100%;
+      font-family: inherit;
+      -webkit-appearance: none;
+      appearance: none;
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--transition);
+    }
+    .cardio-row select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    /* ── Notes ── */
+    .notes-input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--tg-text);
+      font-size: 14px;
+      font-weight: 400;
+      font-family: inherit;
+      margin-top: 12px;
+      transition: all var(--transition);
+      resize: none;
+      -webkit-appearance: none;
+    }
+    .notes-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .notes-input::placeholder {
+      color: #444;
+    }
+
+    /* ── Submit Button ── */
+    .submit-area {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 14px 20px 28px;
+      background: linear-gradient(180deg, transparent 0%, var(--tg-bg) 40%, var(--tg-bg) 100%);
+      z-index: 10;
+    }
+    .submit-btn {
+      width: 100%;
+      padding: 16px;
+      border-radius: var(--radius);
+      border: none;
+      background: var(--accent);
+      color: var(--tg-button-text);
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all var(--transition);
+      -webkit-tap-highlight-color: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .submit-btn:active {
+      transform: scale(0.97);
+      opacity: 0.9;
+    }
+    .submit-btn .count {
+      background: rgba(255,255,255,0.2);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-100px);
+      background: #2d2d2d;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 500;
+      z-index: 100;
+      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      pointer-events: none;
+      border: 1px solid var(--border-active);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.success { border-color: var(--success); }
+
+    /* ── Non-Telegram Banner ── */
+    .tg-banner {
+      background: var(--accent);
+      color: var(--tg-button-text);
+      text-align: center;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: -0.1px;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --tg-bg: #f2f2f7;
+        --tg-text: #1c1c1e;
+        --tg-hint: #8e8e93;
+        --tg-secondary: #ffffff;
+        --surface: #ffffff;
+        --surface-raised: #ffffff;
+        --border: rgba(0,0,0,0.08);
+        --border-active: rgba(0,0,0,0.15);
+        --text-secondary: #6e6e73;
+      }
+      .submit-area {
+        background: linear-gradient(180deg, transparent 0%, var(--tg-bg) 40%, var(--tg-bg) 100%);
+      }
+      .exercise-card.skipped .ex-header {
+        text-decoration-color: rgba(0,0,0,0.15);
+      }
+      .input-group input::placeholder { color: #bbb; }
+      .notes-input::placeholder { color: #bbb; }
+      .toast { background: #fff; color: #1c1c1e; border-color: rgba(0,0,0,0.1); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Non-Telegram Banner -->
+  <div class="tg-banner" id="tgBanner" style="display:none">📱 Open in Telegram for full functionality</div>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-brand">
+      <div class="logo">🏋️</div>
+      <div>
+        <div class="header-title">PF Workout</div>
+        <div class="header-date" id="dateDisplay"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Day Switcher -->
+  <div class="day-switcher">
+    <div class="day-btn active" id="btnDayA" onclick="selectDay('A')">
+      <div class="day-label">Day A</div>
+      <div class="day-name">Push + Legs</div>
+    </div>
+    <div class="day-btn" id="btnDayB" onclick="selectDay('B')">
+      <div class="day-label">Day B</div>
+      <div class="day-name">Pull + Core</div>
+    </div>
+  </div>
+
+  <!-- Exercises -->
+  <div class="content" id="exercises"></div>
+
+  <!-- Cardio + Notes + Submit -->
+  <div class="submit-area">
+    <div class="cardio-card" style="margin-bottom:10px">
+      <div class="cardio-title"><span class="cardio-icon">🏃</span> Cardio</div>
+      <div class="cardio-row">
+        <div class="input-group">
+          <label>Type</label>
+          <select id="cardioType">
+            <option value="">Skip</option>
+            <option value="Treadmill">Treadmill</option>
+            <option value="Elliptical">Elliptical</option>
+            <option value="Bike">Bike</option>
+            <option value="Stairs">Stairs</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>Minutes</label>
+          <input type="number" id="cardioMin" min="0" max="120" placeholder="0" inputmode="numeric">
+        </div>
+      </div>
+    </div>
+    <input type="text" class="notes-input" id="notes" placeholder="Notes (how'd it feel?)" maxlength="200">
+    <button class="submit-btn" onclick="submitWorkout()" id="submitBtn">
+      ✅ Log Workout <span class="count" id="exCount">5 exercises</span>
+    </button>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // Tg initialization with fallback for non-Telegram browsers
+    let Tg;
+    let isTelegram = false;
+    if (window.Telegram && window.Telegram.WebApp) {
+      Tg = window.Telegram.WebApp;
+      isTelegram = true;
+      Tg.ready();
+      Tg.expand();
+    } else {
+      // Mock Tg for non-Telegram browsers (preview mode)
+      Tg = {
+        ready: () => {},
+        expand: () => {},
+        sendData: (data) => { console.log('Tg.sendData (mock):', data); },
+        close: () => {},
+        backgroundColor: null,
+        textColor: null,
+        hintColor: null,
+        buttonColor: null,
+        buttonTextColor: null,
+        secondaryBackgroundColor: null
+      };
+      document.getElementById('tgBanner').style.display = 'block';
+    }
+
+    let currentDay = 'A';
+
+    const workouts = {
+      A: [
+        { name: 'Leg Press',        sets: 3, reps: 12 },
+        { name: 'Chest Press',      sets: 3, reps: 12 },
+        { name: 'Shoulder Press',   sets: 3, reps: 12 },
+        { name: 'Leg Curl',         sets: 3, reps: 12 },
+        { name: 'Triceps Pushdown', sets: 3, reps: 12 }
+      ],
+      B: [
+        { name: 'Seated Row',       sets: 3, reps: 12 },
+        { name: 'Lat Pulldown',     sets: 3, reps: 12 },
+        { name: 'Leg Extension',    sets: 3, reps: 12 },
+        { name: 'Biceps Curl',      sets: 3, reps: 12 },
+        { name: 'Ab Crunch',        sets: 3, reps: 15 }
+      ]
+    };
+
+    // Apply Telegram theme
+    function applyTheme() {
+      const root = document.documentElement.style;
+      if (Tg.backgroundColor) root.setProperty('--tg-bg', Tg.backgroundColor);
+      if (Tg.textColor) root.setProperty('--tg-text', Tg.textColor);
+      if (Tg.hintColor) root.setProperty('--text-secondary', Tg.hintColor);
+      if (Tg.buttonColor) root.setProperty('--accent', Tg.buttonColor);
+      if (Tg.buttonTextColor) root.setProperty('--tg-button-text', Tg.buttonTextColor);
+      if (Tg.secondaryBackgroundColor) {
+        root.setProperty('--surface', Tg.secondaryBackgroundColor);
+        root.setProperty('--surface-raised', Tg.secondaryBackgroundColor);
+      }
+    }
+    applyTheme();
+
+    // Date
+    const today = new Date();
+    document.getElementById('dateDisplay').textContent = today.toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric'
+    });
+
+    function selectDay(day) {
+      currentDay = day;
+      document.getElementById('btnDayA').classList.toggle('active', day === 'A');
+      document.getElementById('btnDayB').classList.toggle('active', day === 'B');
+      renderExercises();
+    }
+
+    function renderExercises() {
+      const container = document.getElementById('exercises');
+      const exs = workouts[currentDay];
+
+      container.innerHTML = exs.map((ex, i) => `
+        <div class="exercise-card" id="card_${currentDay}_${i}">
+          <div class="ex-header">
+            <div>
+              <span class="ex-name">${ex.name}</span>
+              <span class="ex-meta"> · ${ex.sets} sets</span>
+            </div>
+            <label class="skip-toggle" onclick="toggleSkip('${currentDay}',${i})">
+              <span class="skip-label">Skip</span>
+              <input type="checkbox" id="skip_${currentDay}_${i}">
+              <span class="skip-dot"></span>
+            </label>
+          </div>
+          <div class="input-row">
+            <div class="input-group">
+              <label>Weight</label>
+              <input type="number" id="w_${currentDay}_${i}" min="0" max="999" placeholder="0" inputmode="decimal">
+            </div>
+            <div class="input-group">
+              <label>lbs</label>
+              <input type="text" disabled style="opacity:0.5;font-size:13px;text-align:center" value="—">
+            </div>
+            <div class="input-group">
+              <label>Reps</label>
+              <input type="number" id="r_${currentDay}_${i}" min="0" max="50" value="${ex.reps}" inputmode="numeric">
+            </div>
+            <div class="input-group">
+              <label>Done</label>
+              <input type="number" id="s_${currentDay}_${i}" min="0" max="10" value="${ex.sets}" inputmode="numeric">
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      updateCount();
+    }
+
+    function toggleSkip(day, i) {
+      const cb = document.getElementById('skip_' + day + '_' + i);
+      const card = document.getElementById('card_' + day + '_' + i);
+      const inputs = card.querySelectorAll('input[type="number"]');
+      inputs.forEach(inp => { inp.disabled = cb.checked; });
+      card.classList.toggle('skipped', cb.checked);
+      updateCount();
+    }
+
+    function updateCount() {
+      const cards = document.querySelectorAll('.exercise-card');
+      let active = 0;
+      cards.forEach(c => { if (!c.classList.contains('skipped')) active++; });
+      document.getElementById('exCount').textContent = active + ' exercise' + (active !== 1 ? 's' : '');
+    }
+
+    function showToast(msg, success) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast' + (success ? ' success' : '') + ' show';
+      setTimeout(() => { t.classList.remove('show'); }, 2000);
+    }
+
+    function submitWorkout() {
+      const exercises = [];
+      let totalExercises = 0;
+      const exs = workouts[currentDay];
+
+      exs.forEach((ex, i) => {
+        const skipped = document.getElementById('skip_' + currentDay + '_' + i);
+        const isSkipped = skipped ? skipped.checked : false;
+        const weight = parseFloat(document.getElementById('w_' + currentDay + '_' + i)?.value) || 0;
+        const reps = parseInt(document.getElementById('r_' + currentDay + '_' + i)?.value) || 0;
+        const sets = parseInt(document.getElementById('s_' + currentDay + '_' + i)?.value) || 0;
+
+        if (!isSkipped && (weight > 0 || reps > 0 || sets > 0)) totalExercises++;
+
+        exercises.push({
+          name: ex.name,
+          weight: isSkipped ? 0 : weight,
+          reps: isSkipped ? 0 : reps,
+          sets: isSkipped ? 0 : sets,
+          skipped: isSkipped
+        });
+      });
+
+      if (totalExercises === 0) {
+        const cardioType = document.getElementById('cardioType').value;
+        const cardioMin = parseInt(document.getElementById('cardioMin').value) || 0;
+        if (!cardioType && !cardioMin) {
+          showToast('Log at least one exercise', false);
+          return;
+        }
+      }
+
+      const data = {
+        type: 'workout_log',
+        date: today.toISOString().split('T')[0],
+        workout: 'Day ' + currentDay,
+        exercises: exercises,
+        cardio_type: document.getElementById('cardioType').value || '',
+        cardio_min: parseInt(document.getElementById('cardioMin').value) || 0,
+        notes: document.getElementById('notes').value || ''
+      };
+
+      if (!isTelegram) {
+        showToast('📱 Open in Telegram to log workouts', false);
+        return;
+      }
+
+      showToast('Logging...', true);
+      document.getElementById('submitBtn').disabled = true;
+
+      try {
+        Tg.sendData(JSON.stringify(data));
+        showToast('✅ Workout logged!', true);
+        setTimeout(() => { if (isTelegram) Tg.close(); }, 1200);
+      } catch (err) {
+        showToast('Error sending data. Try again.', false);
+        document.getElementById('submitBtn').disabled = false;
+      }
+    }
+
+    renderExercises();
+  </script>
+</body>
+</html>
