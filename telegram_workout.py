@@ -4288,19 +4288,34 @@ class TelegramAdapter(BasePlatformAdapter):
         return "A", None
 
     def _get_program_phase(self, history: list[dict] | None = None) -> tuple:
-        """Return (week_label, sets, reps) based on total completed sessions.
-        Week 1 (Foundation): 2x12  → sessions 1-6
-        Week 2 (Volume):     3x10  → sessions 7-12
-        Week 3 (Strength):   3x8   → sessions 13+"""
+        """Return (week_label, sets, reps) for the current point in the 24-session mesocycle.
+        Mesocycle = 4 phases × 6 sessions: Foundation (2x12), Volume (3x10), Strength (3x8),
+        Deload (2x12 at 90% weight). Cycles indefinitely."""
         if history is None:
             history = self._read_log_history(limit=1000)
         sessions = len({(r["date"], r["workout"]) for r in history if r["workout"]})
-        if sessions >= 13:
-            return ("Week 3 · Strength", 3, 8)
-        elif sessions >= 7:
-            return ("Week 2 · Volume", 3, 10)
+        if sessions == 0:
+            return ("Mesocycle 1 · Week 1 · Foundation", 2, 12)
+        cycle = (sessions - 1) // 24 + 1
+        in_cycle = ((sessions - 1) % 24) + 1
+        if in_cycle <= 6:
+            return (f"Mesocycle {cycle} · Week 1 · Foundation", 2, 12)
+        elif in_cycle <= 12:
+            return (f"Mesocycle {cycle} · Week 2 · Volume", 3, 10)
+        elif in_cycle <= 18:
+            return (f"Mesocycle {cycle} · Week 3 · Strength", 3, 8)
         else:
-            return ("Week 1 · Foundation", 2, 12)
+            return (f"Mesocycle {cycle} · Week 4 · Deload", 2, 12)
+
+    def _is_planned_deload(self, history: list[dict] | None = None) -> bool:
+        """True if the user is in Week 4 (sessions 19-24) of any mesocycle."""
+        if history is None:
+            history = self._read_log_history(limit=1000)
+        sessions = len({(r["date"], r["workout"]) for r in history if r["workout"]})
+        if sessions == 0:
+            return False
+        in_cycle = ((sessions - 1) % 24) + 1
+        return 19 <= in_cycle <= 24
 
     def _get_stats(self) -> dict:
         """Return aggregate training stats for the /stats command."""
@@ -4778,12 +4793,19 @@ class TelegramAdapter(BasePlatformAdapter):
         except Exception:
             pass
 
-        # Deload suggestion: surface a recommendation when plateaus persist across lifts
+        # Deload: planned (Week 4 of mesocycle) takes priority; otherwise check reactive
+        # trigger from Phase 12. Both set deload=1; deload_reason distinguishes for banner copy.
         should_deload = False
         try:
-            should_deload, _plateaued = self._should_deload(history)
-            if should_deload:
+            if self._is_planned_deload(history):
+                should_deload = True
                 params.append("deload=1")
+                params.append("deload_reason=planned")
+            else:
+                should_deload, _plateaued = self._should_deload(history)
+                if should_deload:
+                    params.append("deload=1")
+                    params.append("deload_reason=reactive")
         except Exception:
             pass
 

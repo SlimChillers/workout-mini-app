@@ -685,6 +685,7 @@
     const progSets = parseInt(_qp.get('sets')) || 0;
     const progReps = parseInt(_qp.get('reps')) || 0;
     const deloadFlag = _qp.get('deload') === '1';
+    const deloadReason = _qp.get('deload_reason') || 'reactive';  // backward-compat default
     let substitutesMap = {};
     try {
       const sb = _qp.get('subs');
@@ -891,12 +892,18 @@
       const effSets = progSets || exs[0].sets;
       const effReps = progReps || exs[0].reps;
       const dismissKey = 'deloadDismissed_' + today.toISOString().split('T')[0];
+      const deloadTitle = deloadReason === 'planned'
+        ? 'Planned deload week'
+        : 'Deload recommended';
+      const deloadSub = deloadReason === 'planned'
+        ? 'Scheduled mesocycle rest — go 10% lighter, one less set on heavier lifts.'
+        : 'Plateaus detected — try 10% lighter, one less set on heavier lifts.';
       const banner = (deloadFlag && !sessionStorage.getItem(dismissKey))
         ? `<div class="deload-banner" id="deloadBanner">
              <div class="deload-icon">🔻</div>
              <div class="deload-body">
-               <div class="deload-title">Deload recommended</div>
-               <div class="deload-sub">Plateaus detected — try 10% lighter, one less set on heavier lifts.</div>
+               <div class="deload-title">${deloadTitle}</div>
+               <div class="deload-sub">${deloadSub}</div>
              </div>
              <button class="deload-apply" onclick="applyDeload()">Apply</button>
              <button class="deload-dismiss" onclick="dismissDeload()" aria-label="Dismiss">✕</button>
