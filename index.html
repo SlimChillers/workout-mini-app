@@ -423,6 +423,68 @@
       40% { transform: scale(1.08); }
       100% { transform: scale(1); }
     }
+
+    /* ── Phase 12: deload banner + substitution menu ── */
+    .deload-banner {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; margin: 0 0 12px;
+      border-radius: 14px; background: var(--surface-raised);
+      border: 1px solid var(--accent); box-shadow: 0 0 0 4px var(--accent-glow);
+    }
+    .deload-icon { font-size: 22px; line-height: 1; }
+    .deload-body { flex: 1; min-width: 0; }
+    .deload-title { font-weight: 600; color: var(--text); font-size: 14px; }
+    .deload-sub { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+    .deload-apply {
+      background: var(--accent); color: var(--accent-text); border: 0;
+      border-radius: 10px; padding: 8px 14px; font-weight: 600; font-size: 13px;
+      cursor: pointer;
+    }
+    .deload-apply:disabled { opacity: 0.6; cursor: default; }
+    .deload-dismiss {
+      background: transparent; border: 0; color: var(--text-secondary);
+      font-size: 18px; padding: 4px 8px; cursor: pointer; line-height: 1;
+    }
+
+    .ex-swap-btn {
+      background: transparent; border: 1px solid var(--border); border-radius: 8px;
+      padding: 2px 8px; font-size: 13px; color: var(--text-secondary);
+      margin-left: 4px; cursor: pointer; line-height: 1.6;
+    }
+    .ex-swap-btn:active { background: var(--accent-glow); }
+    .ex-sub-note {
+      font-size: 11px; color: var(--text-secondary); font-style: italic; margin-top: 4px;
+    }
+
+    #subBackdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      opacity: 0; pointer-events: none; transition: opacity 0.2s ease-in; z-index: 100;
+    }
+    #subBackdrop.open { opacity: 1; pointer-events: auto; }
+    .sub-sheet {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 101;
+      background: var(--surface-raised);
+      border-top-left-radius: 18px; border-top-right-radius: 18px;
+      padding: 16px; transform: translateY(100%);
+      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      max-height: 70vh; overflow-y: auto;
+      box-shadow: 0 -8px 32px rgba(0,0,0,0.4);
+    }
+    .sub-sheet.open { transform: translateY(0); }
+    .sub-sheet-header {
+      font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--text);
+    }
+    .sub-sheet-option {
+      display: block; width: 100%; text-align: left; padding: 14px;
+      border-radius: 10px; background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); margin-bottom: 8px; font-size: 15px; cursor: pointer;
+    }
+    .sub-sheet-option.is-current { border-color: var(--accent); background: var(--accent-glow); }
+    .sub-tag { font-size: 10px; color: var(--text-secondary); margin-left: 6px; font-weight: 500; }
+    .sub-sheet-cancel {
+      display: block; width: 100%; padding: 12px; background: transparent;
+      border: 0; color: var(--text-secondary); margin-top: 4px; font-size: 14px; cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -581,6 +643,9 @@
 
   <div class="toast" id="toast"></div>
 
+  <div id="subBackdrop" onclick="closeSubSheet()"></div>
+  <div id="subSheet" class="sub-sheet"></div>
+
   <script>
     // ── Telegram init ──
     let Tg, isTelegram = false;
@@ -595,7 +660,7 @@
       document.getElementById('app').classList.add('has-banner');
     }
 
-    // ── URL params: ?prev=, ?day=, ?ago=, ?sets=, ?reps= ──
+    // ── URL params: ?prev=, ?day=, ?ago=, ?sets=, ?reps=, ?deload=, ?subs= ──
     const _qp = new URLSearchParams(window.location.search);
     let prevWeights = {};
     try {
@@ -609,6 +674,15 @@
     const daysAgo = _qp.has('ago') ? parseInt(_qp.get('ago')) : null;
     const progSets = parseInt(_qp.get('sets')) || 0;
     const progReps = parseInt(_qp.get('reps')) || 0;
+    const deloadFlag = _qp.get('deload') === '1';
+    let substitutesMap = {};
+    try {
+      const sb = _qp.get('subs');
+      if (sb) {
+        const padded = sb.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice(0, (4 - sb.length % 4) % 4);
+        substitutesMap = JSON.parse(atob(padded));
+      }
+    } catch {}
     if (_qp.has('day')) {
       let agoLabel = '';
       if (daysAgo === null)  agoLabel = '';
@@ -649,6 +723,8 @@
 
     // ── Workout definitions ──
     let currentDay = 'A';
+    const displayName = {};   // `${day}_${i}` → exercise name actually shown (may be a swap)
+    const originalName = {};  // `${day}_${i}` → original from workouts[] when swapped
     const workouts = {
       A: [
         { name: 'Leg Press',          sets: 2, reps: 12, muscle: 'Legs' },
@@ -804,11 +880,32 @@
       const exs = workouts[currentDay];
       const effSets = progSets || exs[0].sets;
       const effReps = progReps || exs[0].reps;
-      container.innerHTML = exs.map((ex, i) => {
-        const prev = prevWeights[ex.name];
+      const dismissKey = 'deloadDismissed_' + today.toISOString().split('T')[0];
+      const banner = (deloadFlag && !sessionStorage.getItem(dismissKey))
+        ? `<div class="deload-banner" id="deloadBanner">
+             <div class="deload-icon">🔻</div>
+             <div class="deload-body">
+               <div class="deload-title">Deload recommended</div>
+               <div class="deload-sub">Plateaus detected — try 10% lighter, one less set on heavier lifts.</div>
+             </div>
+             <button class="deload-apply" onclick="applyDeload()">Apply</button>
+             <button class="deload-dismiss" onclick="dismissDeload()" aria-label="Dismiss">✕</button>
+           </div>`
+        : '';
+      const cards = exs.map((ex, i) => {
+        const key = currentDay + '_' + i;
+        const shownName = displayName[key] || ex.name;
+        const origForLookup = originalName[key] || ex.name;
+        const hasAlts = (substitutesMap[origForLookup] || []).length > 0;
+        const swapBtn = hasAlts
+          ? `<button class="ex-swap-btn" onclick="openSubMenu('${currentDay}',${i})" aria-label="Swap exercise">🔄</button>`
+          : '';
+        const subNote = originalName[key]
+          ? `<div class="ex-sub-note">swapped from ${originalName[key]}</div>`
+          : '';
+        const prev = prevWeights[shownName];
         const prevW = Array.isArray(prev) ? prev[0] : prev;
         const prevR = Array.isArray(prev) ? prev[1] : null;
-        const prevS = Array.isArray(prev) ? prev[2] : null;
         const hasPrev = prevW !== undefined && prevW > 0;
         const suggested = hasPrev ? +(prevW + 2.5).toFixed(1) : null;
         const weightVal  = hasPrev ? ` value="${prevW}"` : '';
@@ -822,11 +919,13 @@
         <div class="exercise-card" id="card_${currentDay}_${i}">
           <div class="ex-header">
             <div>
-              <div class="ex-name">${ex.name}</div>
+              <div class="ex-name">${shownName}</div>
               <div class="ex-meta-row">
                 <span class="ex-sets-badge">${effSets} sets · ${effReps} reps</span>
                 <span class="ex-muscle-chip">${ex.muscle}</span>
+                ${swapBtn}
               </div>
+              ${subNote}
               ${lastLine}
             </div>
             <label class="skip-toggle" onclick="toggleSkip('${currentDay}',${i})">
@@ -855,7 +954,89 @@
           </div>
         </div>`;
       }).join('');
+      container.innerHTML = banner + cards;
       updateCount();
+    }
+
+    function applyDeload() {
+      const root = document.getElementById('screen-log');
+      if (root.dataset.deloadApplied === '1') return;
+      root.dataset.deloadApplied = '1';
+      workouts[currentDay].forEach((_ex, i) => {
+        const wIn = document.getElementById('w_' + currentDay + '_' + i);
+        const sIn = document.getElementById('s_' + currentDay + '_' + i);
+        if (wIn && +wIn.value > 0) wIn.value = Math.round(+wIn.value * 0.9 * 2) / 2;
+        if (sIn && +sIn.value >= 3) sIn.value = +sIn.value - 1;
+      });
+      const btn = document.querySelector('.deload-apply');
+      if (btn) { btn.textContent = '✓ Applied'; btn.disabled = true; }
+      updateVolume(); updateCount();
+      showToast('Deload applied — tweak per card as needed', 'success');
+    }
+
+    function dismissDeload() {
+      sessionStorage.setItem('deloadDismissed_' + today.toISOString().split('T')[0], '1');
+      document.getElementById('deloadBanner')?.remove();
+    }
+
+    function openSubMenu(day, i) {
+      const ex = workouts[day][i];
+      const key = day + '_' + i;
+      const current = displayName[key] || ex.name;
+      const orig = originalName[key] || ex.name;
+      const alts = substitutesMap[orig] || [];
+      if (!alts.length) { showToast('No alternatives configured', 'error'); return; }
+      const items = [ex.name].concat(alts).filter((v, idx, a) => a.indexOf(v) === idx);
+      const sheet = document.getElementById('subSheet');
+      sheet.innerHTML =
+        `<div class="sub-sheet-header">Swap ${current}</div>` +
+        items.map(n => {
+          const safe = n.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const isOriginal = n === ex.name;
+          const tag = isOriginal ? ' <span class="sub-tag">original</span>' : '';
+          const cls = n === current ? ' is-current' : '';
+          return `<button class="sub-sheet-option${cls}" onclick="chooseSub('${day}',${i},'${safe}')">${n}${tag}</button>`;
+        }).join('') +
+        `<button class="sub-sheet-cancel" onclick="closeSubSheet()">Cancel</button>`;
+      sheet.classList.add('open');
+      document.getElementById('subBackdrop').classList.add('open');
+    }
+
+    function chooseSub(day, i, name) {
+      const ex = workouts[day][i];
+      const key = day + '_' + i;
+      if (name === ex.name) { delete displayName[key]; delete originalName[key]; }
+      else { displayName[key] = name; originalName[key] = ex.name; }
+      closeSubSheet();
+      // Capture all current input state for cards in this day, then re-render so the
+      // swapped card picks up the new exercise's prev weight + chip. Restore non-swapped.
+      const state = {};
+      workouts[day].forEach((_, j) => {
+        state[j] = {
+          w: document.getElementById('w_' + day + '_' + j)?.value || '',
+          r: document.getElementById('r_' + day + '_' + j)?.value || '',
+          s: document.getElementById('s_' + day + '_' + j)?.value || '',
+          skip: document.getElementById('skip_' + day + '_' + j)?.checked || false,
+        };
+      });
+      renderExercises();
+      workouts[day].forEach((_, j) => {
+        if (j === i) return;
+        const wIn = document.getElementById('w_' + day + '_' + j);
+        const rIn = document.getElementById('r_' + day + '_' + j);
+        const sIn = document.getElementById('s_' + day + '_' + j);
+        const skipIn = document.getElementById('skip_' + day + '_' + j);
+        if (wIn) wIn.value = state[j].w;
+        if (rIn && state[j].r) rIn.value = state[j].r;
+        if (sIn && state[j].s) sIn.value = state[j].s;
+        if (skipIn && state[j].skip) { skipIn.checked = true; toggleSkip(day, j); }
+      });
+      updateVolume();
+    }
+
+    function closeSubSheet() {
+      document.getElementById('subSheet').classList.remove('open');
+      document.getElementById('subBackdrop').classList.remove('open');
     }
 
     function toggleSkip(day, i) {
@@ -967,12 +1148,17 @@
 
         if (!isSkipped && (weight > 0 || reps > 0 || sets > 0)) totalExercises++;
 
+        const key = currentDay + '_' + i;
+        const actualName = displayName[key] || ex.name;
+        const subbedFor = originalName[key] || null;
+
         exercises.push({
-          name:    ex.name,
+          name:    actualName,
           weight:  isSkipped ? 0 : weight,
           reps:    isSkipped ? 0 : reps,
           sets:    isSkipped ? 0 : sets,
-          skipped: isSkipped
+          skipped: isSkipped,
+          substituted_for: subbedFor
         });
       });
 

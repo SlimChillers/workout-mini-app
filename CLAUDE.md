@@ -41,13 +41,23 @@ Workout log payload structure:
   "date": "2026-05-13",
   "workout": "Day A",
   "exercises": [
-    {"name": "Leg Press", "weight": 100, "reps": 12, "sets": 3, "skipped": false}
+    {"name": "Leg Press", "weight": 100, "reps": 12, "sets": 3, "skipped": false, "substituted_for": null}
   ],
   "cardio_type": "Treadmill",
   "cardio_min": 20,
   "notes": "Felt strong today"
 }
 ```
+
+- `substituted_for` is the *original planned* exercise when the user swapped (e.g. `"Leg Press"` if they performed Hack Squat instead). The actual exercise performed lives in `name`. The bot logs the swap as `[sub for <original>]` in the Notes column so PR/plateau detection keys off the actually-performed exercise.
+
+### URL params (bot → mini app)
+The bot's `_send_workout_button` constructs the WebApp URL with these query params:
+- `prev=<base64>` — JSON of `{exerciseName: [weight, reps, sets]}` for last-session pre-fill
+- `day=A|B` and `ago=<days>` — next-day suggestion + last session recency
+- `sets=<n>&reps=<n>` — current program-phase rep scheme (Phase 10)
+- `deload=1` — set when `_should_deload` fires (≥9 sessions AND ≥2 plateaued lifts); mini app renders a banner with a one-tap "Apply" that scales weights × 0.9 and drops a set when current sets ≥ 3
+- `subs=<base64>` — JSON of `{exerciseName: [alt1, alt2, ...]}` so the mini app's swap menu can offer alternatives; catalog is owned by the bot (`SUBSTITUTES` constant in `telegram_workout.py`) so it can be updated without a Pages redeploy
 
 ### Design
 - Dark theme by default with light mode via `prefers-color-scheme`

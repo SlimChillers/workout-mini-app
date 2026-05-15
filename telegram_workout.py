@@ -4212,11 +4212,12 @@ class TelegramAdapter(BasePlatformAdapter):
         prs.sort(key=lambda r: r["date"], reverse=True)
         return prs
 
-    def _get_next_day(self) -> tuple:
+    def _get_next_day(self, history: list[dict] | None = None) -> tuple:
         """Return (next_day: str, days_ago: int | None) based on last logged session.
         Alternates A→B→A. Returns ('A', None) when no history exists."""
         from datetime import date as _date
-        history = self._read_log_history(limit=200)
+        if history is None:
+            history = self._read_log_history(limit=200)
         for row in reversed(history):
             phase = row.get("workout", "").strip()
             if phase in ("Day A", "Day B"):
@@ -4229,12 +4230,13 @@ class TelegramAdapter(BasePlatformAdapter):
                 return next_day, days_ago
         return "A", None
 
-    def _get_program_phase(self) -> tuple:
+    def _get_program_phase(self, history: list[dict] | None = None) -> tuple:
         """Return (week_label, sets, reps) based on total completed sessions.
         Week 1 (Foundation): 2x12  → sessions 1-6
         Week 2 (Volume):     3x10  → sessions 7-12
         Week 3 (Strength):   3x8   → sessions 13+"""
-        history = self._read_log_history(limit=1000)
+        if history is None:
+            history = self._read_log_history(limit=1000)
         sessions = len({(r["date"], r["workout"]) for r in history if r["workout"]})
         if sessions >= 13:
             return ("Week 3 · Strength", 3, 8)
@@ -4286,9 +4288,10 @@ class TelegramAdapter(BasePlatformAdapter):
             "prog_reps": prog_reps,
         }
 
-    def _get_last_weights(self) -> dict:
+    def _get_last_weights(self, history: list[dict] | None = None) -> dict:
         """Return {exercise_name: [weight, reps, sets]} for the most recent logged session per exercise."""
-        history = self._read_log_history(limit=500)
+        if history is None:
+            history = self._read_log_history(limit=500)
         last: dict = {}
         for row in history:
             nm = row["exercise"]
@@ -4303,6 +4306,31 @@ class TelegramAdapter(BasePlatformAdapter):
             return False
         weights = [r["weight"] for r in sessions[-threshold:]]
         return len(set(weights)) == 1
+
+    SUBSTITUTES = {
+        "Leg Press":          ["Hack Squat", "Leg Extension", "Goblet Squat"],
+        "Seated Chest Press": ["Smith Bench Press", "Chest Fly Machine", "Push-up"],
+        "Shoulder Press":     ["Smith Shoulder Press", "Lateral Raise", "Arnold Press"],
+        "Tricep Pushdown":    ["Overhead Tricep Extension", "Skull Crusher", "Dip Machine"],
+        "Lat Pulldown":       ["Assisted Pull-up", "Straight-arm Pulldown", "Cable Row"],
+        "Seated Row":         ["T-Bar Row", "Cable Row", "Single-arm DB Row"],
+        "Bicep Curl":         ["Hammer Curl", "Preacher Curl", "Cable Curl"],
+        "Cable Crunch":       ["Hanging Leg Raise", "Decline Sit-up", "Plank"],
+    }
+
+    def _should_deload(self, history: list[dict]) -> tuple[bool, list[str]]:
+        """Return (should_deload, plateaued_exercise_names). Fires when total sessions ≥ 9
+        AND ≥ 2 distinct exercises have plateaued (last 3 sessions same weight)."""
+        sessions = {(r["date"], r["workout"]) for r in history if r.get("workout")}
+        if len(sessions) < 9:
+            return False, []
+        names = {r["exercise"] for r in history if r.get("exercise") and r.get("weight", 0) > 0}
+        plateaued = [n for n in names if self._is_plateau(n, history, threshold=3)]
+        return (len(plateaued) >= 2, plateaued)
+
+    def _get_substitutes_b64(self) -> str:
+        import base64 as _b64
+        return _b64.urlsafe_b64encode(json.dumps(self.SUBSTITUTES).encode()).decode().rstrip("=")
 
     def _build_progress_chart_url(self, exercise: str, rows: list[dict]) -> str:
         """Build a quickchart.io GET URL for a weight-over-time line chart."""
@@ -4541,10 +4569,16 @@ class TelegramAdapter(BasePlatformAdapter):
         params: list[str] = []
         hint_text = "Tap below to log your workout:"
 
+        # Read history once, share across all consumers below
+        try:
+            history = self._read_log_history(limit=1000)
+        except Exception:
+            history = []
+
         # Inject previous weights
         try:
             import base64 as _b64
-            last = self._get_last_weights()
+            last = self._get_last_weights(history=history)
             if last:
                 encoded = _b64.urlsafe_b64encode(json.dumps(last).encode()).decode().rstrip("=")
                 params.append(f"prev={encoded}")
@@ -4553,7 +4587,7 @@ class TelegramAdapter(BasePlatformAdapter):
 
         # Inject program phase (sets / reps overrides)
         try:
-            week_label, prog_sets, prog_reps = self._get_program_phase()
+            week_label, prog_sets, prog_reps = self._get_program_phase(history=history)
             params.append(f"sets={prog_sets}")
             params.append(f"reps={prog_reps}")
         except Exception:
@@ -4561,7 +4595,7 @@ class TelegramAdapter(BasePlatformAdapter):
 
         # Inject next-day suggestion
         try:
-            next_day, days_ago = self._get_next_day()
+            next_day, days_ago = self._get_next_day(history=history)
             params.append(f"day={next_day}")
             if days_ago is not None:
                 params.append(f"ago={days_ago}")
@@ -4575,6 +4609,20 @@ class TelegramAdapter(BasePlatformAdapter):
                 ago_label = f"last session {days_ago} days ago"
             phase_line = f" · {week_label}" if week_label else ""
             hint_text = f"💡 *Day {next_day}* up next · {ago_label}{phase_line}\nTap below to start:"
+        except Exception:
+            pass
+
+        # Deload suggestion: surface a recommendation when plateaus persist across lifts
+        try:
+            should_deload, _plateaued = self._should_deload(history)
+            if should_deload:
+                params.append("deload=1")
+        except Exception:
+            pass
+
+        # Ship the substitutes catalog so the mini app can offer swaps
+        try:
+            params.append(f"subs={self._get_substitutes_b64()}")
         except Exception:
             pass
 
@@ -4620,7 +4668,10 @@ class TelegramAdapter(BasePlatformAdapter):
         for ex in exercises:
             if not ex.get("skipped") and (ex.get("weight", 0) > 0 or ex.get("reps", 0) > 0 or ex.get("sets", 0) > 0):
                 # Column order matches Sheet1 header: Date, WorkoutPhase, Exercise, Sets, Reps, Weight, Notes
-                rows.append([date, workout, ex["name"], ex.get("sets", 0), ex.get("reps", 0), ex.get("weight", 0), notes])
+                sub_for = ex.get("substituted_for")
+                sub_note = f"[sub for {sub_for}]" if sub_for else ""
+                row_notes = (notes + " " + sub_note).strip() if sub_note else notes
+                rows.append([date, workout, ex["name"], ex.get("sets", 0), ex.get("reps", 0), ex.get("weight", 0), row_notes])
                 logged_exercises.append((ex["name"], float(ex.get("weight", 0)), int(ex.get("reps", 0)), int(ex.get("sets", 0))))
 
         if cardio_type and isinstance(cardio_min, (int, float)) and cardio_min > 0:
