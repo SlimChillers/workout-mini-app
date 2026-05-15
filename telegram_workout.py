@@ -4179,6 +4179,23 @@ class TelegramAdapter(BasePlatformAdapter):
                     return False
         return True
 
+    def _get_next_day(self) -> tuple:
+        """Return (next_day: str, days_ago: int | None) based on last logged session.
+        Alternates A→B→A. Returns ('A', None) when no history exists."""
+        from datetime import date as _date
+        history = self._read_log_history(limit=200)
+        for row in reversed(history):
+            phase = row.get("workout", "").strip()
+            if phase in ("Day A", "Day B"):
+                last_letter = phase[-1]
+                next_day = "B" if last_letter == "A" else "A"
+                try:
+                    days_ago = (_date.today() - _date.fromisoformat(row["date"])).days
+                except Exception:
+                    days_ago = None
+                return next_day, days_ago
+        return "A", None
+
     def _get_last_weights(self) -> dict:
         """Return {exercise_name: weight} for the most recent logged weight per exercise."""
         history = self._read_log_history(limit=500)
@@ -4361,27 +4378,52 @@ class TelegramAdapter(BasePlatformAdapter):
                 logger.error("[Telegram] weekly digest error for %s: %s", chat_id, e)
 
     async def _send_workout_button(self, update: Update) -> None:
-        """Send inline keyboard with WebApp button, pre-loading last session weights via URL param."""
+        """Send inline keyboard with WebApp button.
+        URL carries ?day=, ?ago=, and ?prev= so the Mini App can pre-select the
+        correct day tab, show a contextual hint, and pre-fill last session weights."""
         try:
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         except ImportError:
             await update.message.reply_text("Workout logger is not available right now.")
             return
+
         base_url = "https://slimchillers.github.io/workout-mini-app/"
+        params: list[str] = []
+        hint_text = "Tap below to log your workout:"
+
+        # Inject previous weights
         try:
             import base64 as _b64
             last = self._get_last_weights()
             if last:
                 encoded = _b64.urlsafe_b64encode(json.dumps(last).encode()).decode().rstrip("=")
-                webapp_url = f"{base_url}?prev={encoded}"
-            else:
-                webapp_url = base_url
+                params.append(f"prev={encoded}")
         except Exception:
-            webapp_url = base_url
+            pass
+
+        # Inject next-day suggestion
+        try:
+            next_day, days_ago = self._get_next_day()
+            params.append(f"day={next_day}")
+            if days_ago is not None:
+                params.append(f"ago={days_ago}")
+            if days_ago is None:
+                ago_label = "no previous sessions"
+            elif days_ago == 0:
+                ago_label = "last session was today"
+            elif days_ago == 1:
+                ago_label = "last session yesterday"
+            else:
+                ago_label = f"last session {days_ago} days ago"
+            hint_text = f"💡 *Day {next_day}* up next · {ago_label}\nTap below to start:"
+        except Exception:
+            pass
+
+        webapp_url = base_url + ("?" + "&".join(params) if params else "")
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("🏋️ Open Workout Logger", web_app=WebAppInfo(url=webapp_url))
         ]])
-        await update.message.reply_text("Tap below to log your workout:", reply_markup=keyboard)
+        await update.message.reply_text(hint_text, parse_mode="Markdown", reply_markup=keyboard)
 
     async def _handle_web_app_data(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle web_app_data from Telegram Mini Apps (workout logger)."""

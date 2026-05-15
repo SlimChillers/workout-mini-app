@@ -374,6 +374,11 @@
     .toast.success { border-color: var(--success); }
     .toast.error   { border-color: var(--danger); }
 
+    /* ── Log screen day hint ── */
+    .log-hint {
+      font-size: 12px; color: var(--accent); font-weight: 500; margin-top: 3px;
+    }
+
     /* ── Hint Chip (progressive overload suggestion) ── */
     .hint-chip {
       display: inline-block; margin-top: 6px;
@@ -451,6 +456,7 @@
         <div class="log-topbar">
           <div class="log-title">Log Workout</div>
           <div class="log-date" id="logDate"></div>
+          <div class="log-hint" id="logHint" style="display:none"></div>
         </div>
 
         <div class="day-switcher">
@@ -553,15 +559,28 @@
       document.getElementById('app').classList.add('has-banner');
     }
 
-    // ── Pre-fill weights from last session (injected via ?prev= URL param) ──
+    // ── URL params: ?prev=, ?day=, ?ago= ──
+    const _qp = new URLSearchParams(window.location.search);
     let prevWeights = {};
     try {
-      const b64 = new URLSearchParams(window.location.search).get('prev');
+      const b64 = _qp.get('prev');
       if (b64) {
         const padded = b64.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice(0, (4 - b64.length % 4) % 4);
         prevWeights = JSON.parse(atob(padded));
       }
     } catch {}
+    const suggestedDay = _qp.get('day') || 'A';
+    const daysAgo = _qp.has('ago') ? parseInt(_qp.get('ago')) : null;
+    if (_qp.has('day')) {
+      let agoLabel = '';
+      if (daysAgo === null)  agoLabel = '';
+      else if (daysAgo === 0) agoLabel = ' · trained today';
+      else if (daysAgo === 1) agoLabel = ' · last session yesterday';
+      else                    agoLabel = ` · last session ${daysAgo} days ago`;
+      const hintEl = document.getElementById('logHint');
+      hintEl.textContent = `Day ${suggestedDay} suggested${agoLabel}`;
+      hintEl.style.display = '';
+    }
 
     // ── Theme ──
     function applyTheme() {
@@ -884,7 +903,7 @@
 
     // ── Init ──
     refreshHome();
-    renderExercises();
+    selectDay(suggestedDay);
   </script>
 </body>
 </html>
