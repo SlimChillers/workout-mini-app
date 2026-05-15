@@ -1265,7 +1265,17 @@ class TelegramAdapter(BasePlatformAdapter):
             builder = builder.request(request).get_updates_request(get_updates_request)
             self._app = builder.build()
             self._bot = self._app.bot
-            
+
+            # Register weekly digest job (Sundays 20:00 UTC)
+            try:
+                from datetime import time as _t
+                jq = self._app.job_queue
+                if jq is not None:
+                    jq.run_daily(self._send_weekly_digest, time=_t(20, 0, 0), days=(6,))
+                    logger.info("[Telegram] Weekly digest job scheduled (Sun 20:00 UTC)")
+            except Exception as _jq_err:
+                logger.warning("[Telegram] Could not schedule weekly digest: %s", _jq_err)
+
             # Register handlers
             self._app.add_handler(TelegramMessageHandler(
                 filters.TEXT & ~filters.COMMAND,
@@ -4014,12 +4024,23 @@ class TelegramAdapter(BasePlatformAdapter):
         if not update.message or not update.message.text:
             return
         
-        # Intercept /workout command before generic command handling
-        text = update.message.text.strip().lower()
-        if text == "/workout" or text.startswith("/workout@"):
+        # Intercept workout commands before generic handling
+        text = update.message.text.strip()
+        lower = text.lower()
+        if lower == "/workout" or lower.startswith("/workout@"):
             await self._send_workout_button(update)
             return
-        
+
+        if lower.startswith("/progress"):
+            parts = text.split(" ", 1)
+            exercise = parts[1].strip() if len(parts) > 1 else ""
+            await self._cmd_progress(update, exercise)
+            return
+
+        if lower == "/history" or lower.startswith("/history@") or lower.startswith("/history "):
+            await self._cmd_history(update)
+            return
+
         if not self._should_process_message(update.message, is_command=True):
             return
         
@@ -4058,16 +4079,39 @@ class TelegramAdapter(BasePlatformAdapter):
                         w = int(row["weight"]) if row["weight"] == int(row["weight"]) else row["weight"]
                         score = row["weight"] * row["reps"]
                         pr_tag = "  🏅" if score >= best_score and score > 0 else ""
-                        lines.append(f"{row['date']}  {w}kg × {row['reps']}  ({row['sets']} sets){pr_tag}")
+                        lines.append(f"{row['date']}  {w} lbs × {row['reps']}  ({row['sets']} sets){pr_tag}")
                     lines.append("─────────────────────────")
                     best_row = max(sessions, key=lambda r: r["weight"] * r["reps"])
                     bw = int(best_row["weight"]) if best_row["weight"] == int(best_row["weight"]) else best_row["weight"]
-                    lines.append(f"🏆 Best: {bw}kg × {best_row['reps']}")
+                    lines.append(f"🏆 Best: {bw} lbs × {best_row['reps']}")
                     text = "\n".join(lines)
                 await query.message.reply_text(text, parse_mode="Markdown")
             except Exception as e:
                 logger.error("[Telegram] wk:stats callback error: %s", e)
                 await query.message.reply_text("⚠️ Could not load stats right now.")
+            return
+
+        if action == "progress":
+            exercise = parts[2] if len(parts) > 2 else ""
+            await query.answer()
+            try:
+                await self._send_progress_chart(query.message, exercise)
+            except Exception as e:
+                logger.error("[Telegram] wk:progress callback error: %s", e)
+            return
+
+        if action == "history":
+            page_str = parts[2] if len(parts) > 2 else "0"
+            try:
+                page = int(page_str)
+            except ValueError:
+                page = 0
+            await query.answer()
+            try:
+                hist_text, hist_kb = self._build_history_message(page=page)
+                await query.message.edit_text(hist_text, parse_mode="Markdown", reply_markup=hist_kb)
+            except Exception as e:
+                logger.error("[Telegram] wk:history callback error: %s", e)
             return
 
         await query.answer()
@@ -4134,6 +4178,169 @@ class TelegramAdapter(BasePlatformAdapter):
                 if prev >= current_score:
                     return False
         return True
+
+    def _build_progress_chart_url(self, exercise: str, rows: list[dict]) -> str:
+        """Build a quickchart.io GET URL for a weight-over-time line chart."""
+        import urllib.parse as _ul
+        dates = [r["date"] for r in rows]
+        weights = [r["weight"] for r in rows]
+        chart = {
+            "type": "line",
+            "data": {
+                "labels": dates,
+                "datasets": [{
+                    "label": exercise,
+                    "data": weights,
+                    "fill": False,
+                    "borderColor": "#4CAF50",
+                    "backgroundColor": "rgba(76,175,80,0.1)",
+                    "tension": 0.3,
+                    "pointRadius": 4,
+                }]
+            },
+            "options": {
+                "scales": {
+                    "y": {"title": {"display": True, "text": "lbs"}}
+                },
+                "plugins": {
+                    "legend": {"display": False},
+                    "title": {"display": True, "text": exercise}
+                }
+            }
+        }
+        encoded = _ul.quote(json.dumps(chart))
+        return f"https://quickchart.io/chart?c={encoded}&w=500&h=280&f=png"
+
+    async def _send_progress_chart(self, msg: Any, exercise: str) -> None:
+        """Fetch history and send a quickchart.io progress chart for the given exercise."""
+        history = self._read_log_history(exercise=exercise, limit=300)
+        if not history:
+            await msg.reply_text(f"No history found for *{exercise}*.", parse_mode="Markdown")
+            return
+        url = self._build_progress_chart_url(exercise, history)
+        best = max(history, key=lambda r: r["weight"])
+        bw = int(best["weight"]) if best["weight"] == int(best["weight"]) else best["weight"]
+        caption = f"📈 *{exercise}* — {len(history)} sessions\n🏆 Best: {bw} lbs × {best['reps']}"
+        try:
+            await msg.reply_photo(photo=url, caption=caption, parse_mode="Markdown")
+        except Exception as e:
+            logger.error("[Telegram] progress chart send error: %s", e)
+            await msg.reply_text(f"⚠️ Could not load chart for {exercise}.")
+
+    def _build_history_message(self, page: int = 0) -> tuple:
+        """Return (text, keyboard) for a paginated workout history view (5 sessions/page)."""
+        from telegram import InlineKeyboardButton as _IKB, InlineKeyboardMarkup as _IKM
+        history = self._read_log_history(limit=500)
+        # Group rows into sessions keyed by (date, workout), preserving date-ascending order
+        sessions: dict = {}
+        for row in history:
+            key = (row["date"], row["workout"])
+            sessions.setdefault(key, []).append(row)
+        session_list = list(sessions.items())
+        session_list.reverse()  # most recent first
+
+        page_size = 5
+        total = len(session_list)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        page = max(0, min(page, total_pages - 1))
+        chunk = session_list[page * page_size:(page + 1) * page_size]
+
+        if not chunk:
+            return "No workout history found yet.", None
+
+        lines = [f"📋 *Workout History* · Page {page + 1}/{total_pages}", "━━━━━━━━━━━━━━━━━━━━━━"]
+        for (date_str, workout), rows in chunk:
+            total_vol = sum(r["weight"] * r["reps"] * r["sets"] for r in rows if r["weight"] > 0)
+            vol_str = f" · {int(total_vol):,} lbs" if total_vol > 0 else ""
+            lines.append(f"*{date_str}* — {workout}{vol_str}")
+            for r in rows:
+                w = int(r["weight"]) if r["weight"] and r["weight"] == int(r["weight"]) else r["weight"]
+                lines.append(f"  • {r['exercise']}: {w} lbs × {r['reps']} ({r['sets']} sets)")
+            lines.append("")
+
+        nav = []
+        if page > 0:
+            nav.append(_IKB("◀ Prev", callback_data=f"wk:history:{page - 1}"))
+        if page < total_pages - 1:
+            nav.append(_IKB("Next ▶", callback_data=f"wk:history:{page + 1}"))
+        keyboard = _IKM([nav]) if nav else None
+        return "\n".join(lines).strip(), keyboard
+
+    async def _cmd_progress(self, update: Update, exercise: str = "") -> None:
+        """Handle /progress [exercise] — show chart or exercise picker if no arg given."""
+        if not exercise:
+            history = self._read_log_history(limit=300)
+            seen: set = set()
+            exercises = []
+            for row in history:
+                nm = row["exercise"]
+                if nm.lower() not in seen:
+                    seen.add(nm.lower())
+                    exercises.append(nm)
+            if not exercises:
+                await update.message.reply_text("No workout history found yet.")
+                return
+            from telegram import InlineKeyboardButton as _IKB, InlineKeyboardMarkup as _IKM
+            rows_kb = []
+            for i in range(0, len(exercises), 2):
+                row_btns = [_IKB(exercises[i], callback_data=f"wk:progress:{exercises[i]}")]
+                if i + 1 < len(exercises):
+                    row_btns.append(_IKB(exercises[i + 1], callback_data=f"wk:progress:{exercises[i + 1]}"))
+                rows_kb.append(row_btns)
+            await update.message.reply_text("Choose an exercise to view progress:", reply_markup=_IKM(rows_kb))
+            return
+        await self._send_progress_chart(update.message, exercise)
+
+    async def _cmd_history(self, update: Update, page: int = 0) -> None:
+        """Handle /history command — sends first page of paginated session list."""
+        text, keyboard = self._build_history_message(page=page)
+        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+    async def _send_weekly_digest(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Job callback: send weekly workout summary every Sunday at 20:00 UTC."""
+        import os as _os
+        from datetime import date as _date, timedelta
+        chat_ids_raw = _os.environ.get("TELEGRAM_ALLOWED_USERS", "")
+        chat_ids = [c.strip() for c in chat_ids_raw.split(",") if c.strip()]
+        if not chat_ids:
+            return
+        today = _date.today()
+        week_ago = (today - timedelta(days=7)).isoformat()
+        history = self._read_log_history(limit=500)
+        week_rows = [r for r in history if r["date"] >= week_ago]
+        if not week_rows:
+            return
+        by_ex: dict = {}
+        for row in week_rows:
+            by_ex.setdefault(row["exercise"], []).append(row)
+        sessions_set = {(r["date"], r["workout"]) for r in week_rows}
+        total_vol = sum(r["weight"] * r["reps"] * r["sets"] for r in week_rows if r["weight"] > 0)
+        try:
+            day_label = today.strftime("%-d %b %Y")
+        except ValueError:
+            day_label = today.isoformat()
+        lines = [
+            f"📅 *Weekly Digest* — w/e {day_label}",
+            "━━━━━━━━━━━━━━━━━━━━━━",
+            f"🗓 Sessions this week: *{len(sessions_set)}*",
+        ]
+        if total_vol > 0:
+            lines.append(f"⚡ Total Volume: *{int(total_vol):,} lbs*")
+        lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+        for ex, rows in by_ex.items():
+            if "cardio" in ex.lower():
+                total_min = sum(r["reps"] for r in rows)
+                lines.append(f"🏃 {ex}: {total_min} min")
+            else:
+                best = max(rows, key=lambda r: r["weight"] * r["reps"])
+                bw = int(best["weight"]) if best["weight"] and best["weight"] == int(best["weight"]) else best["weight"]
+                lines.append(f"💪 {ex}: best {bw} lbs × {best['reps']}")
+        msg_text = "\n".join(lines)
+        for chat_id in chat_ids:
+            try:
+                await context.bot.send_message(chat_id=int(chat_id), text=msg_text, parse_mode="Markdown")
+            except Exception as e:
+                logger.error("[Telegram] weekly digest error for %s: %s", chat_id, e)
 
     async def _send_workout_button(self, update: Update) -> None:
         """Send inline keyboard with WebApp button for workout logger."""
