@@ -4179,6 +4179,24 @@ class TelegramAdapter(BasePlatformAdapter):
                     return False
         return True
 
+    def _get_last_weights(self) -> dict:
+        """Return {exercise_name: weight} for the most recent logged weight per exercise."""
+        history = self._read_log_history(limit=500)
+        last: dict = {}
+        for row in history:
+            nm = row["exercise"]
+            if nm and row["weight"] > 0:
+                last[nm] = row["weight"]
+        return last
+
+    def _is_plateau(self, exercise: str, history: list[dict], threshold: int = 3) -> bool:
+        """Return True if the last `threshold` sessions for this exercise all share the same weight."""
+        sessions = [r for r in history if r["exercise"].lower() == exercise.lower() and r["weight"] > 0]
+        if len(sessions) < threshold:
+            return False
+        weights = [r["weight"] for r in sessions[-threshold:]]
+        return len(set(weights)) == 1
+
     def _build_progress_chart_url(self, exercise: str, rows: list[dict]) -> str:
         """Build a quickchart.io GET URL for a weight-over-time line chart."""
         import urllib.parse as _ul
@@ -4343,22 +4361,27 @@ class TelegramAdapter(BasePlatformAdapter):
                 logger.error("[Telegram] weekly digest error for %s: %s", chat_id, e)
 
     async def _send_workout_button(self, update: Update) -> None:
-        """Send inline keyboard with WebApp button for workout logger."""
+        """Send inline keyboard with WebApp button, pre-loading last session weights via URL param."""
         try:
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         except ImportError:
             await update.message.reply_text("Workout logger is not available right now.")
             return
+        base_url = "https://slimchillers.github.io/workout-mini-app/"
+        try:
+            import base64 as _b64
+            last = self._get_last_weights()
+            if last:
+                encoded = _b64.urlsafe_b64encode(json.dumps(last).encode()).decode().rstrip("=")
+                webapp_url = f"{base_url}?prev={encoded}"
+            else:
+                webapp_url = base_url
+        except Exception:
+            webapp_url = base_url
         keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton(
-                "🏋️ Open Workout Logger",
-                web_app=WebAppInfo(url="https://slimchillers.github.io/workout-mini-app/")
-            )
+            InlineKeyboardButton("🏋️ Open Workout Logger", web_app=WebAppInfo(url=webapp_url))
         ]])
-        await update.message.reply_text(
-            "Tap below to log your workout:",
-            reply_markup=keyboard
-        )
+        await update.message.reply_text("Tap below to log your workout:", reply_markup=keyboard)
 
     async def _handle_web_app_data(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle web_app_data from Telegram Mini Apps (workout logger)."""
@@ -4441,25 +4464,30 @@ class TelegramAdapter(BasePlatformAdapter):
 
         if top_lift:
             name, w, r, _ = top_lift
-            lines.append(f"🏆 Top lift: *{name}* {int(w) if w == int(w) else w}kg × {r}")
+            lines.append(f"🏆 Top lift: *{name}* {int(w) if w == int(w) else w} lbs × {r}")
 
         if total_volume > 0:
             vol_str = f"{int(total_volume):,}" if total_volume == int(total_volume) else f"{total_volume:,.1f}"
-            lines.append(f"⚡ Volume: *{vol_str} kg* total")
+            lines.append(f"⚡ Volume: *{vol_str} lbs* total")
 
         if cardio_type and cardio_min:
             lines.append(f"🏃 Cardio: {cardio_type} — {cardio_min} min")
 
         lines.append("━━━━━━━━━━━━━━━━━━━━━━")
 
-        pr_exercises = []
+        plateau_exercises = []
         for name, w, r, s in logged_exercises:
             pr = self._is_new_pr(name, w, r, history)
+            plateau = not pr and self._is_plateau(name, history, threshold=3)
             pr_tag = "  🏅 *PR!*" if pr else ""
             w_str = int(w) if w == int(w) else w
-            lines.append(f"💪 {name}: {w_str}kg × {r}  ({s} sets){pr_tag}")
-            if pr:
-                pr_exercises.append(name)
+            lines.append(f"💪 {name}: {w_str} lbs × {r}  ({s} sets){pr_tag}")
+            if plateau:
+                plateau_exercises.append((name, w_str))
+
+        if plateau_exercises:
+            for pname, pw in plateau_exercises:
+                lines.append(f"⚠️ _{pname}: {pw} lbs × 3 sessions — try +2.5 next time?_")
 
         if notes:
             lines.append(f"📝 _{notes}_")
