@@ -4045,6 +4045,10 @@ class TelegramAdapter(BasePlatformAdapter):
             await self._cmd_prs(update)
             return
 
+        if lower == "/stats" or lower.startswith("/stats@"):
+            await self._cmd_stats(update)
+            return
+
         if not self._should_process_message(update.message, is_command=True):
             return
         
@@ -4239,6 +4243,49 @@ class TelegramAdapter(BasePlatformAdapter):
         else:
             return ("Week 1 · Foundation", 2, 12)
 
+    def _get_stats(self) -> dict:
+        """Return aggregate training stats for the /stats command."""
+        from datetime import date as _date
+        history = self._read_log_history(limit=2000)
+        if not history:
+            return {}
+
+        sessions = sorted({(r["date"], r["workout"]) for r in history if r["workout"]})
+        total_sessions = len(sessions)
+        first_date = sessions[0][0] if sessions else ""
+
+        total_volume = sum(r["weight"] * r["reps"] * r["sets"] for r in history if r["weight"] > 0 and "cardio" not in r.get("exercise", "").lower())
+        total_cardio = sum(r["reps"] for r in history if "cardio" in r.get("exercise", "").lower())
+
+        ex_counts: dict = {}
+        for r in history:
+            nm = r["exercise"]
+            if nm and "cardio" not in nm.lower() and r["weight"] > 0:
+                ex_counts[nm] = ex_counts.get(nm, 0) + 1
+        most_trained = max(ex_counts, key=ex_counts.get) if ex_counts else ""
+
+        avg_per_week = 0.0
+        try:
+            first = _date.fromisoformat(first_date)
+            weeks = max(1, (_date.today() - first).days / 7)
+            avg_per_week = round(total_sessions / weeks, 1)
+        except Exception:
+            pass
+
+        week_label, prog_sets, prog_reps = self._get_program_phase()
+
+        return {
+            "total_sessions": total_sessions,
+            "total_volume": int(total_volume),
+            "total_cardio": int(total_cardio),
+            "first_date": first_date,
+            "most_trained": most_trained,
+            "avg_per_week": avg_per_week,
+            "week_label": week_label,
+            "prog_sets": prog_sets,
+            "prog_reps": prog_reps,
+        }
+
     def _get_last_weights(self) -> dict:
         """Return {exercise_name: [weight, reps, sets]} for the most recent logged session per exercise."""
         history = self._read_log_history(limit=500)
@@ -4389,6 +4436,35 @@ class TelegramAdapter(BasePlatformAdapter):
             except Exception:
                 date_label = r["date"]
             lines.append(f"*{r['exercise']}* — {w} lbs × {r['reps']}  · set {date_label}")
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+    async def _cmd_stats(self, update: Update) -> None:
+        """Handle /stats command — sends an aggregate training dashboard."""
+        s = self._get_stats()
+        if not s:
+            await update.message.reply_text("No workout history found yet.")
+            return
+        try:
+            from datetime import date as _date
+            days_active = (_date.today() - _date.fromisoformat(s["first_date"])).days
+            first_label = _date.fromisoformat(s["first_date"]).strftime("%-d %b %Y")
+        except Exception:
+            days_active = 0
+            first_label = s["first_date"]
+
+        vol_str = f"{s['total_volume']:,}" if s["total_volume"] == int(s["total_volume"]) else f"{s['total_volume']:,.1f}"
+        lines = [
+            "📊 *Training Stats*",
+            "━━━━━━━━━━━━━━━━━━━━━━",
+            f"🗓 Sessions: *{s['total_sessions']}*  ({s['avg_per_week']}/wk avg)",
+            f"⚡ Total Volume: *{vol_str} lbs*",
+            f"📅 First session: {first_label}  ({days_active} days ago)",
+            f"🔁 Current: *{s['week_label']}*  ({s['prog_sets']}×{s['prog_reps']})",
+        ]
+        if s["most_trained"]:
+            lines.append(f"💪 Most trained: *{s['most_trained']}*")
+        if s["total_cardio"] > 0:
+            lines.append(f"🏃 Total cardio: *{s['total_cardio']} min*")
         await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
     async def _send_weekly_digest(self, context: ContextTypes.DEFAULT_TYPE) -> None:
