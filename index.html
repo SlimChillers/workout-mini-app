@@ -388,6 +388,10 @@
       cursor: pointer; transition: all var(--tr); user-select: none;
     }
     .hint-chip:active { opacity: 0.7; transform: scale(0.95); }
+    .ex-last {
+      font-size: 12px; color: var(--text-secondary); font-weight: 500;
+      margin-top: 4px;
+    }
   </style>
 </head>
 <body>
@@ -766,9 +770,15 @@
       const exs = workouts[currentDay];
       container.innerHTML = exs.map((ex, i) => {
         const prev = prevWeights[ex.name];
-        const hasPrev = prev !== undefined && prev > 0;
-        const suggested = hasPrev ? +(prev + 2.5).toFixed(1) : null;
-        const weightVal  = hasPrev ? ` value="${prev}"` : '';
+        const prevW = Array.isArray(prev) ? prev[0] : prev;
+        const prevR = Array.isArray(prev) ? prev[1] : null;
+        const prevS = Array.isArray(prev) ? prev[2] : null;
+        const hasPrev = prevW !== undefined && prevW > 0;
+        const suggested = hasPrev ? +(prevW + 2.5).toFixed(1) : null;
+        const weightVal  = hasPrev ? ` value="${prevW}"` : '';
+        const lastLine = hasPrev
+          ? `<div class="ex-last">Last: ${prevW} lbs × ${prevR}</div>`
+          : '';
         const chip = hasPrev
           ? `<span class="hint-chip" onclick="setWeight('${currentDay}',${i},${suggested})">+2.5 → ${suggested} lbs</span>`
           : '';
@@ -781,6 +791,7 @@
                 <span class="ex-sets-badge">${ex.sets} sets · ${ex.reps} reps</span>
                 <span class="ex-muscle-chip">${ex.muscle}</span>
               </div>
+              ${lastLine}
             </div>
             <label class="skip-toggle" onclick="toggleSkip('${currentDay}',${i})">
               <span class="skip-label">Skip</span>

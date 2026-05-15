@@ -4226,13 +4226,13 @@ class TelegramAdapter(BasePlatformAdapter):
         return "A", None
 
     def _get_last_weights(self) -> dict:
-        """Return {exercise_name: weight} for the most recent logged weight per exercise."""
+        """Return {exercise_name: [weight, reps, sets]} for the most recent logged session per exercise."""
         history = self._read_log_history(limit=500)
         last: dict = {}
         for row in history:
             nm = row["exercise"]
             if nm and row["weight"] > 0:
-                last[nm] = row["weight"]
+                last[nm] = [row["weight"], row["reps"], row["sets"]]
         return last
 
     def _is_plateau(self, exercise: str, history: list[dict], threshold: int = 3) -> bool:
