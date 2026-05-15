@@ -7,539 +7,708 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    /* ── Variables (dark defaults) ── */
     :root {
-      --tg-bg: #0d0d0d;
-      --tg-text: #f5f5f5;
-      --tg-hint: #888888;
-      --tg-button: #ff5c3c;
-      --tg-button-text: #ffffff;
-      --tg-secondary: #1a1a1a;
-      --accent: #ff5c3c;
-      --accent-glow: rgba(255,92,60,0.15);
+      --bg: #0a0a0a;
       --surface: #141414;
       --surface-raised: #1c1c1c;
-      --border: rgba(255,255,255,0.06);
-      --border-active: rgba(255,255,255,0.12);
-      --success: #34c759;
-      --text-secondary: #999999;
-      --radius: 14px;
+      --text: #f5f5f5;
+      --text-secondary: #8e8e93;
+      --hint: #8e8e93;
+      --accent: #ff5c3c;
+      --accent-text: #ffffff;
+      --accent-glow: rgba(255,92,60,0.18);
+      --border: rgba(255,255,255,0.07);
+      --border-active: rgba(255,255,255,0.15);
+      --success: #30d158;
+      --danger: #ff3b30;
+      --radius: 16px;
       --radius-sm: 10px;
-      --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      --nav-h: 60px;
+      --tr: 0.2s cubic-bezier(0.4,0,0.2,1);
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f2f2f7;
+        --surface: #e5e5ea;
+        --surface-raised: #ffffff;
+        --text: #1c1c1e;
+        --text-secondary: #6e6e73;
+        --hint: #6e6e73;
+        --border: rgba(0,0,0,0.08);
+        --border-active: rgba(0,0,0,0.15);
+        --accent-glow: rgba(255,92,60,0.12);
+      }
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; overflow: hidden; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: var(--tg-bg);
-      color: var(--tg-text);
-      padding: 0;
-      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
       -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-      display: flex;
-      flex-direction: column;
     }
 
-    /* ── Header ── */
-    .header {
-      padding: 20px 20px 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .header-brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .logo {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      background: var(--accent);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 19px;
-      flex-shrink: 0;
-    }
-    .header-title {
-      font-size: 18px;
-      font-weight: 600;
-      letter-spacing: -0.3px;
-    }
-    .header-date {
-      font-size: 13px;
-      color: var(--text-secondary);
-      font-weight: 400;
-      letter-spacing: -0.1px;
+    /* ── Banner ── */
+    .tg-banner {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: var(--accent); color: var(--accent-text);
+      text-align: center; padding: 10px 16px;
+      font-size: 13px; font-weight: 500; z-index: 200;
     }
 
-    /* ── Day Switcher ── */
-    .day-switcher {
-      display: flex;
-      gap: 6px;
-      padding: 16px 20px 0;
+    /* ── App Shell ── */
+    .app {
+      position: fixed; top: 0; left: 0; right: 0;
+      bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+      overflow: hidden;
     }
-    .day-btn {
-      flex: 1;
-      padding: 12px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
+    .app.has-banner { top: 40px; }
+
+    /* ── Screens ── */
+    .screen {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      opacity: 0; pointer-events: none;
+      transform: translateY(6px);
+      transition: opacity var(--tr), transform var(--tr);
+    }
+    .screen.active { opacity: 1; pointer-events: all; transform: translateY(0); }
+
+    .screen-body {
+      flex: 1; overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+
+    /* ── Bottom Nav ── */
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+      padding-bottom: env(safe-area-inset-bottom, 0px);
       background: var(--surface);
-      color: var(--text-secondary);
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      text-align: center;
-      transition: all var(--transition);
-      font-family: inherit;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-around;
+      z-index: 100;
+    }
+    .nav-btn {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 3px;
+      padding: 8px 0; background: none; border: none;
+      cursor: pointer; color: var(--text-secondary);
+      transition: color var(--tr); user-select: none; font-family: inherit;
+    }
+    .nav-btn.active { color: var(--accent); }
+    .nav-icon { font-size: 22px; line-height: 1; transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+    .nav-btn.active .nav-icon { transform: scale(1.15); }
+    .nav-label { font-size: 10px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; }
+
+    /* ══════════ HOME SCREEN ══════════ */
+    .home-header {
+      padding: 24px 20px 0;
+      display: flex; align-items: flex-start; justify-content: space-between;
+    }
+    .home-greeting { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+    .home-date { font-size: 13px; color: var(--text-secondary); margin-top: 3px; }
+    .logo-icon {
+      width: 42px; height: 42px; border-radius: 12px;
+      background: var(--accent); display: flex;
+      align-items: center; justify-content: center; font-size: 21px; flex-shrink: 0;
+    }
+
+    /* Ring */
+    .ring-section {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 24px 20px 16px; gap: 6px;
+    }
+    .ring-wrap { position: relative; width: 152px; height: 152px; }
+    .ring-svg { width: 152px; height: 152px; transform: rotate(-90deg); }
+    .ring-track { fill: none; stroke: var(--surface-raised); stroke-width: 10; }
+    .ring-fill {
+      fill: none; stroke: var(--accent); stroke-width: 10;
+      stroke-linecap: round;
+      stroke-dasharray: 351.86;   /* 2π×56 */
+      stroke-dashoffset: 351.86;  /* starts empty */
+      transition: stroke-dashoffset 0.8s cubic-bezier(0.4,0,0.2,1);
+    }
+    .ring-center {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+    }
+    .ring-count { font-size: 40px; font-weight: 700; letter-spacing: -2px; line-height: 1; }
+    .ring-goal  { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+    .ring-label { font-size: 14px; color: var(--text-secondary); font-weight: 500; }
+
+    /* CTA */
+    .start-btn {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: calc(100% - 40px); margin: 4px 20px 16px;
+      padding: 18px; border-radius: var(--radius); border: none;
+      background: var(--accent); color: var(--accent-text);
+      font-size: 17px; font-weight: 700; letter-spacing: -0.3px;
+      cursor: pointer; font-family: inherit;
+      box-shadow: 0 4px 24px var(--accent-glow);
+      transition: all var(--tr); user-select: none;
+    }
+    .start-btn:active { transform: scale(0.97); box-shadow: 0 2px 12px var(--accent-glow); }
+
+    /* Quick Stats */
+    .quick-stats { display: flex; gap: 10px; padding: 0 20px 20px; }
+    .stat-card {
+      flex: 1; background: var(--surface-raised); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 14px 12px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .stat-icon { font-size: 18px; }
+    .stat-value { font-size: 22px; font-weight: 700; letter-spacing: -1px; }
+    .stat-label { font-size: 10px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Section Header */
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 20px 12px;
+    }
+    .section-title { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
+    .section-action { font-size: 13px; color: var(--accent); font-weight: 500; cursor: pointer; }
+
+    /* Session Cards */
+    .session-card {
+      margin: 0 20px 10px; background: var(--surface-raised);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px; display: flex; align-items: center; gap: 14px;
+    }
+    .session-icon-wrap {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: var(--accent-glow); border: 1px solid rgba(255,92,60,0.2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; flex-shrink: 0;
+    }
+    .session-info { flex: 1; min-width: 0; }
+    .session-title { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; }
+    .session-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+    .session-badge {
+      background: var(--accent-glow); color: var(--accent);
+      border-radius: 20px; padding: 4px 10px;
+      font-size: 12px; font-weight: 600; white-space: nowrap;
+    }
+
+    /* Empty State */
+    .empty-state {
+      margin: 20px; background: var(--surface-raised);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 36px 20px; text-align: center;
+    }
+    .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+    .empty-sub { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+
+    /* ══════════ LOG SCREEN ══════════ */
+    .log-topbar { padding: 20px 20px 0; }
+    .log-title { font-size: 20px; font-weight: 700; letter-spacing: -0.4px; }
+    .log-date { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+
+    /* Day Switcher */
+    .day-switcher { display: flex; gap: 8px; padding: 14px 20px 0; }
+    .day-btn {
+      flex: 1; padding: 12px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border); background: var(--surface-raised);
+      color: var(--text-secondary); font-size: 14px; font-weight: 500;
+      cursor: pointer; text-align: center; transition: all var(--tr);
+      font-family: inherit; user-select: none;
     }
     .day-btn:active { transform: scale(0.97); }
     .day-btn.active {
-      background: var(--accent-glow);
-      border-color: var(--accent);
-      color: var(--accent);
-      font-weight: 600;
-      box-shadow: 0 0 20px var(--accent-glow);
+      background: var(--accent-glow); border-color: var(--accent);
+      color: var(--accent); font-weight: 600;
     }
-    .day-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      opacity: 0.6;
-      margin-bottom: 3px;
-    }
-    .day-name {
-      font-size: 14px;
-      font-weight: 600;
-    }
+    .day-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; opacity: 0.7; margin-bottom: 3px; }
+    .day-name { font-size: 14px; font-weight: 600; }
 
-    /* ── Scrollable Content ── */
-    .content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 14px 20px 100px;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    /* ── Exercise Card ── */
+    /* Exercise Cards */
+    .exercises-wrap { padding: 12px 20px 8px; }
     .exercise-card {
-      background: var(--surface-raised);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 16px;
-      margin-bottom: 10px;
-      transition: all var(--transition);
-      position: relative;
-      overflow: hidden;
+      background: var(--surface-raised); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px; margin-bottom: 8px;
+      transition: all var(--tr); position: relative; overflow: hidden;
     }
-    .exercise-card.skipped {
-      opacity: 0.4;
-      background: var(--surface);
+    .exercise-card::before {
+      content: ''; position: absolute; top: 0; left: 0;
+      width: 3px; height: 100%; background: var(--accent);
+      border-radius: 0 2px 2px 0; opacity: 0; transition: opacity var(--tr);
     }
-    .exercise-card.skipped .ex-header {
-      text-decoration: line-through;
-      text-decoration-color: rgba(255,255,255,0.2);
+    .exercise-card:focus-within::before { opacity: 1; }
+    .exercise-card.skipped { opacity: 0.38; background: var(--surface); }
+    .exercise-card.skipped .ex-name { text-decoration: line-through; text-decoration-color: rgba(255,255,255,0.2); }
+
+    .ex-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; }
+    .ex-name { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; }
+    .ex-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+    .ex-sets-badge { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+    .ex-muscle-chip {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 2px 7px;
+      font-size: 10px; color: var(--text-secondary); font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.3px;
     }
-    .ex-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-    }
-    .ex-name {
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: -0.2px;
-    }
-    .ex-meta {
-      font-size: 12px;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-    .skip-toggle {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
-    }
+
+    .skip-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; padding: 2px 0; }
     .skip-toggle input { display: none; }
     .skip-dot {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      border: 2px solid var(--border-active);
-      transition: all var(--transition);
-      flex-shrink: 0;
+      width: 20px; height: 20px; border-radius: 50%;
+      border: 2px solid var(--border-active); transition: all var(--tr); flex-shrink: 0;
     }
-    .skip-toggle input:checked + .skip-dot {
-      background: var(--border-active);
-      border-color: var(--border-active);
-    }
-    .skip-label {
-      font-size: 12px;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
+    .skip-toggle input:checked + .skip-dot { background: rgba(255,59,48,0.2); border-color: var(--danger); }
+    .skip-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
 
-    /* ── Input Row ── */
-    .input-row {
-      display: flex;
-      gap: 8px;
-    }
-    .input-group {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
+    /* Inputs */
+    .input-row { display: flex; gap: 8px; }
+    .input-group { flex: 1; display: flex; flex-direction: column; gap: 5px; }
     .input-group label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: var(--text-secondary);
-      font-weight: 500;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
+      color: var(--text-secondary); font-weight: 600;
     }
     .input-group input {
-      padding: 11px 12px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--tg-text);
-      font-size: 16px;
-      font-weight: 500;
-      width: 100%;
-      font-family: inherit;
-      transition: all var(--transition);
-      -webkit-appearance: none;
-      appearance: none;
-      text-align: center;
+      padding: 12px 10px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--text); font-size: 16px; font-weight: 600;
+      width: 100%; font-family: inherit; transition: all var(--tr);
+      -webkit-appearance: none; appearance: none; text-align: center;
     }
     .input-group input:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-glow);
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow); background: var(--surface-raised);
     }
-    .input-group input:disabled {
-      opacity: 0.3;
-      pointer-events: none;
-    }
-    .input-group input::placeholder {
-      color: #444;
-      font-weight: 400;
-    }
+    .input-group input:disabled { opacity: 0.25; pointer-events: none; }
+    .input-group input::placeholder { color: var(--border-active); font-weight: 400; }
 
-    /* ── Section Divider ── */
-    .section-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--text-secondary);
-      font-weight: 600;
-      margin: 20px 0 10px;
-      padding: 0 4px;
+    /* Log Footer */
+    .log-footer {
+      flex-shrink: 0; padding: 10px 20px 20px;
+      background: var(--bg); border-top: 1px solid var(--border);
     }
-
-    /* ── Cardio Card ── */
     .cardio-card {
-      background: var(--surface-raised);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 16px;
+      background: var(--surface-raised); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px; margin-bottom: 8px;
     }
-    .cardio-title {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 12px;
-      letter-spacing: -0.2px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .cardio-icon { font-size: 18px; }
-    .cardio-row {
-      display: flex;
-      gap: 8px;
-    }
-    .cardio-row .input-group {
-      flex: 1;
-    }
+    .cardio-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .cardio-row { display: flex; gap: 8px; }
+    .cardio-row .input-group { flex: 1; }
     .cardio-row select {
-      padding: 11px 12px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--tg-text);
-      font-size: 15px;
-      font-weight: 500;
-      width: 100%;
-      font-family: inherit;
-      -webkit-appearance: none;
-      appearance: none;
-      cursor: pointer;
-      text-align: center;
-      transition: all var(--transition);
+      padding: 12px 10px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--text); font-size: 14px; font-weight: 500;
+      width: 100%; font-family: inherit; -webkit-appearance: none;
+      appearance: none; cursor: pointer; text-align: center; transition: all var(--tr);
     }
-    .cardio-row select:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-glow);
-    }
+    .cardio-row select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
 
-    /* ── Notes ── */
     .notes-input {
-      width: 100%;
-      padding: 12px 14px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--tg-text);
-      font-size: 14px;
-      font-weight: 400;
-      font-family: inherit;
-      margin-top: 12px;
-      transition: all var(--transition);
-      resize: none;
-      -webkit-appearance: none;
+      width: 100%; padding: 12px 14px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border); background: var(--surface-raised);
+      color: var(--text); font-size: 14px; font-family: inherit;
+      margin-bottom: 10px; transition: all var(--tr);
+      resize: none; -webkit-appearance: none; display: block;
     }
-    .notes-input:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-glow);
+    .notes-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .notes-input::placeholder { color: var(--text-secondary); }
+
+    .submit-btn {
+      width: 100%; padding: 16px; border-radius: var(--radius); border: none;
+      background: var(--accent); color: var(--accent-text);
+      font-size: 16px; font-weight: 700; letter-spacing: -0.2px;
+      cursor: pointer; font-family: inherit; transition: all var(--tr);
+      user-select: none; display: flex; align-items: center; justify-content: center; gap: 10px;
+      box-shadow: 0 4px 20px var(--accent-glow);
     }
-    .notes-input::placeholder {
-      color: #444;
+    .submit-btn:active { transform: scale(0.97); opacity: 0.9; }
+    .submit-btn:disabled { opacity: 0.5; pointer-events: none; }
+    .submit-btn .count {
+      background: rgba(255,255,255,0.2); border-radius: 20px;
+      padding: 2px 10px; font-size: 13px; font-weight: 600;
     }
 
-    /* ── Submit Button ── */
-    .submit-area {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      padding: 14px 20px 28px;
-      background: linear-gradient(180deg, transparent 0%, var(--tg-bg) 40%, var(--tg-bg) 100%);
-      z-index: 10;
+    /* ══════════ HISTORY SCREEN ══════════ */
+    .hist-topbar { padding: 20px 20px 0; }
+    .hist-title { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+    .hist-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+
+    .stats-strip { display: flex; gap: 10px; padding: 16px 20px; }
+    .stat-pill {
+      flex: 1; background: var(--surface-raised); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 14px 10px; text-align: center;
     }
-    .submit-btn {
-      width: 100%;
-      padding: 16px;
-      border-radius: var(--radius);
-      border: none;
-      background: var(--accent);
-      color: var(--tg-button-text);
-      font-size: 16px;
-      font-weight: 600;
-      letter-spacing: -0.2px;
-      cursor: pointer;
-      font-family: inherit;
-      transition: all var(--transition);
-      -webkit-tap-highlight-color: transparent;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
+    .stat-pill-val { font-size: 24px; font-weight: 700; letter-spacing: -1px; color: var(--accent); }
+    .stat-pill-lbl { font-size: 10px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+    .hist-list { padding: 0 20px 20px; }
+    .hist-item {
+      background: var(--surface-raised); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px; margin-bottom: 8px;
+      display: flex; align-items: center; gap: 14px;
     }
-    .submit-btn:active {
-      transform: scale(0.97);
-      opacity: 0.9;
+    .hist-date-badge {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: var(--accent-glow); border: 1px solid rgba(255,92,60,0.2);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0;
     }
-    .submit-btn .count {
-      background: rgba(255,255,255,0.2);
-      border-radius: 20px;
-      padding: 2px 10px;
-      font-size: 13px;
-      font-weight: 600;
-    }
+    .hist-day { font-size: 16px; font-weight: 700; color: var(--accent); line-height: 1; }
+    .hist-mon { font-size: 9px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.3px; }
+    .hist-info { flex: 1; min-width: 0; }
+    .hist-workout { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; }
+    .hist-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hist-check { font-size: 16px; color: var(--success); }
 
     /* ── Toast ── */
     .toast {
-      position: fixed;
-      top: 16px;
-      left: 50%;
-      transform: translateX(-50%) translateY(-100px);
-      background: #2d2d2d;
-      color: #fff;
-      padding: 12px 20px;
-      border-radius: 24px;
-      font-size: 14px;
-      font-weight: 500;
-      z-index: 100;
-      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-      pointer-events: none;
-      border: 1px solid var(--border-active);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      position: fixed; top: 16px; left: 50%;
+      transform: translateX(-50%) translateY(-120px);
+      background: var(--surface-raised); color: var(--text);
+      padding: 12px 20px; border-radius: 24px; font-size: 14px; font-weight: 500;
+      z-index: 300; transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
+      pointer-events: none; border: 1px solid var(--border-active);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4); white-space: nowrap;
     }
     .toast.show { transform: translateX(-50%) translateY(0); }
     .toast.success { border-color: var(--success); }
-
-    /* ── Non-Telegram Banner ── */
-    .tg-banner {
-      background: var(--accent);
-      color: var(--tg-button-text);
-      text-align: center;
-      padding: 10px 16px;
-      font-size: 13px;
-      font-weight: 500;
-      letter-spacing: -0.1px;
-    }
-
-    @media (prefers-color-scheme: light) {
-      :root {
-        --tg-bg: #f2f2f7;
-        --tg-text: #1c1c1e;
-        --tg-hint: #8e8e93;
-        --tg-secondary: #ffffff;
-        --surface: #ffffff;
-        --surface-raised: #ffffff;
-        --border: rgba(0,0,0,0.08);
-        --border-active: rgba(0,0,0,0.15);
-        --text-secondary: #6e6e73;
-      }
-      .submit-area {
-        background: linear-gradient(180deg, transparent 0%, var(--tg-bg) 40%, var(--tg-bg) 100%);
-      }
-      .exercise-card.skipped .ex-header {
-        text-decoration-color: rgba(0,0,0,0.15);
-      }
-      .input-group input::placeholder { color: #bbb; }
-      .notes-input::placeholder { color: #bbb; }
-      .toast { background: #fff; color: #1c1c1e; border-color: rgba(0,0,0,0.1); }
-    }
+    .toast.error   { border-color: var(--danger); }
   </style>
 </head>
 <body>
 
-  <!-- Non-Telegram Banner -->
   <div class="tg-banner" id="tgBanner" style="display:none">📱 Open in Telegram for full functionality</div>
 
-  <!-- Header -->
-  <div class="header">
-    <div class="header-brand">
-      <div class="logo">🏋️</div>
-      <div>
-        <div class="header-title">PF Workout</div>
-        <div class="header-date" id="dateDisplay"></div>
+  <div class="app" id="app">
+
+    <!-- ══ HOME ══ -->
+    <div class="screen active" id="screen-home">
+      <div class="screen-body">
+        <div class="home-header">
+          <div>
+            <div class="home-greeting" id="homeGreeting">Good evening 👋</div>
+            <div class="home-date" id="homeDate"></div>
+          </div>
+          <div class="logo-icon">🏋️</div>
+        </div>
+
+        <div class="ring-section">
+          <div class="ring-wrap">
+            <svg class="ring-svg" viewBox="0 0 140 140">
+              <circle class="ring-track" cx="70" cy="70" r="56"/>
+              <circle class="ring-fill" id="ringFill" cx="70" cy="70" r="56"/>
+            </svg>
+            <div class="ring-center">
+              <div class="ring-count" id="ringCount">0</div>
+              <div class="ring-goal"  id="ringGoal">/ 3 this week</div>
+            </div>
+          </div>
+          <div class="ring-label">Weekly Workouts</div>
+        </div>
+
+        <button class="start-btn" onclick="showScreen('log')">⚡ Start Workout</button>
+
+        <div class="quick-stats">
+          <div class="stat-card">
+            <div class="stat-icon">🔥</div>
+            <div class="stat-value" id="statTotal">0</div>
+            <div class="stat-label">Total</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">📅</div>
+            <div class="stat-value" id="statStreak">0</div>
+            <div class="stat-label">Streak</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">💪</div>
+            <div class="stat-value" id="statWeek">0</div>
+            <div class="stat-label">This Week</div>
+          </div>
+        </div>
+
+        <div class="section-header">
+          <div class="section-title">Recent Sessions</div>
+          <div class="section-action" onclick="showScreen('history')">See all</div>
+        </div>
+        <div id="recentSessions"></div>
+        <div style="height:12px"></div>
       </div>
     </div>
-  </div>
 
-  <!-- Day Switcher -->
-  <div class="day-switcher">
-    <div class="day-btn active" id="btnDayA" onclick="selectDay('A')">
-      <div class="day-label">Day A</div>
-      <div class="day-name">Push + Legs</div>
-    </div>
-    <div class="day-btn" id="btnDayB" onclick="selectDay('B')">
-      <div class="day-label">Day B</div>
-      <div class="day-name">Pull + Core</div>
-    </div>
-  </div>
-
-  <!-- Exercises -->
-  <div class="content" id="exercises"></div>
-
-  <!-- Cardio + Notes + Submit -->
-  <div class="submit-area">
-    <div class="cardio-card" style="margin-bottom:10px">
-      <div class="cardio-title"><span class="cardio-icon">🏃</span> Cardio</div>
-      <div class="cardio-row">
-        <div class="input-group">
-          <label>Type</label>
-          <select id="cardioType">
-            <option value="">Skip</option>
-            <option value="Treadmill">Treadmill</option>
-            <option value="Elliptical">Elliptical</option>
-            <option value="Bike">Bike</option>
-            <option value="Stairs">Stairs</option>
-            <option value="Other">Other</option>
-          </select>
+    <!-- ══ LOG ══ -->
+    <div class="screen" id="screen-log">
+      <div class="screen-body">
+        <div class="log-topbar">
+          <div class="log-title">Log Workout</div>
+          <div class="log-date" id="logDate"></div>
         </div>
-        <div class="input-group">
-          <label>Minutes</label>
-          <input type="number" id="cardioMin" min="0" max="120" placeholder="0" inputmode="numeric">
+
+        <div class="day-switcher">
+          <div class="day-btn active" id="btnDayA" onclick="selectDay('A')">
+            <div class="day-label">Day A</div>
+            <div class="day-name">Push + Legs</div>
+          </div>
+          <div class="day-btn" id="btnDayB" onclick="selectDay('B')">
+            <div class="day-label">Day B</div>
+            <div class="day-name">Pull + Core</div>
+          </div>
         </div>
+
+        <div class="exercises-wrap" id="exercises"></div>
+      </div>
+
+      <div class="log-footer">
+        <div class="cardio-card">
+          <div class="cardio-title">🏃 Cardio</div>
+          <div class="cardio-row">
+            <div class="input-group">
+              <label>Type</label>
+              <select id="cardioType">
+                <option value="">Skip</option>
+                <option value="Treadmill">Treadmill</option>
+                <option value="Elliptical">Elliptical</option>
+                <option value="Bike">Bike</option>
+                <option value="Stairs">Stairs</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label>Minutes</label>
+              <input type="number" id="cardioMin" min="0" max="120" placeholder="0" inputmode="numeric">
+            </div>
+          </div>
+        </div>
+        <textarea class="notes-input" id="notes" placeholder="Notes (how'd it feel?)" maxlength="200" rows="2"></textarea>
+        <button class="submit-btn" onclick="submitWorkout()" id="submitBtn">
+          ✅ Log Workout <span class="count" id="exCount">5 exercises</span>
+        </button>
       </div>
     </div>
-    <input type="text" class="notes-input" id="notes" placeholder="Notes (how'd it feel?)" maxlength="200">
-    <button class="submit-btn" onclick="submitWorkout()" id="submitBtn">
-      ✅ Log Workout <span class="count" id="exCount">5 exercises</span>
+
+    <!-- ══ HISTORY ══ -->
+    <div class="screen" id="screen-history">
+      <div class="screen-body">
+        <div class="hist-topbar">
+          <div class="hist-title">History</div>
+          <div class="hist-subtitle">Your workout log</div>
+        </div>
+        <div class="stats-strip">
+          <div class="stat-pill">
+            <div class="stat-pill-val" id="hStatTotal">0</div>
+            <div class="stat-pill-lbl">Total</div>
+          </div>
+          <div class="stat-pill">
+            <div class="stat-pill-val" id="hStatWeek">0</div>
+            <div class="stat-pill-lbl">This Week</div>
+          </div>
+          <div class="stat-pill">
+            <div class="stat-pill-val" id="hStatStreak">0</div>
+            <div class="stat-pill-lbl">Streak</div>
+          </div>
+        </div>
+        <div class="hist-list" id="histList"></div>
+      </div>
+    </div>
+
+  </div><!-- .app -->
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-screen="home" onclick="showScreen('home')">
+      <span class="nav-icon">🏠</span>
+      <span class="nav-label">Home</span>
     </button>
-  </div>
+    <button class="nav-btn" data-screen="log" onclick="showScreen('log')">
+      <span class="nav-icon">⚡</span>
+      <span class="nav-label">Log</span>
+    </button>
+    <button class="nav-btn" data-screen="history" onclick="showScreen('history')">
+      <span class="nav-icon">📊</span>
+      <span class="nav-label">History</span>
+    </button>
+  </nav>
 
-  <!-- Toast -->
   <div class="toast" id="toast"></div>
 
   <script>
-    // Tg initialization with fallback for non-Telegram browsers
-    let Tg;
-    let isTelegram = false;
+    // ── Telegram init ──
+    let Tg, isTelegram = false;
     if (window.Telegram && window.Telegram.WebApp) {
       Tg = window.Telegram.WebApp;
       isTelegram = true;
       Tg.ready();
       Tg.expand();
     } else {
-      // Mock Tg for non-Telegram browsers (preview mode)
-      Tg = {
-        ready: () => {},
-        expand: () => {},
-        sendData: (data) => { console.log('Tg.sendData (mock):', data); },
-        close: () => {},
-        backgroundColor: null,
-        textColor: null,
-        hintColor: null,
-        buttonColor: null,
-        buttonTextColor: null,
-        secondaryBackgroundColor: null
-      };
+      Tg = { ready(){}, expand(){}, sendData(d){ console.log('mock sendData', d); }, close(){}, themeParams: {}, onEvent(){} };
       document.getElementById('tgBanner').style.display = 'block';
+      document.getElementById('app').classList.add('has-banner');
     }
 
-    let currentDay = 'A';
+    // ── Theme ──
+    function applyTheme() {
+      const p = Tg.themeParams || {};
+      const s = document.documentElement.style;
+      if (p.bg_color)             s.setProperty('--bg', p.bg_color);
+      if (p.text_color)           s.setProperty('--text', p.text_color);
+      if (p.hint_color)         { s.setProperty('--hint', p.hint_color); s.setProperty('--text-secondary', p.hint_color); }
+      if (p.button_color) {
+        s.setProperty('--accent', p.button_color);
+        const h = p.button_color.replace('#','');
+        const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+        s.setProperty('--accent-glow', `rgba(${r},${g},${b},0.18)`);
+      }
+      if (p.button_text_color)    s.setProperty('--accent-text', p.button_text_color);
+      if (p.secondary_bg_color) { s.setProperty('--surface', p.secondary_bg_color); s.setProperty('--surface-raised', p.secondary_bg_color); }
+    }
+    applyTheme();
+    if (isTelegram) Tg.onEvent('themeChanged', applyTheme);
 
+    // ── Date / greeting ──
+    const today = new Date();
+    const h = today.getHours();
+    document.getElementById('homeGreeting').textContent = h < 12 ? 'Good morning 👋' : h < 17 ? 'Good afternoon 👋' : 'Good evening 👋';
+    const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    document.getElementById('homeDate').textContent = dateStr;
+    document.getElementById('logDate').textContent  = dateStr;
+
+    // ── Workout definitions ──
+    let currentDay = 'A';
     const workouts = {
       A: [
-        { name: 'Leg Press',        sets: 2, reps: 12 },
-        { name: 'Seated Chest Press', sets: 2, reps: 12 },
-        { name: 'Seated Row',       sets: 2, reps: 12 },
-        { name: 'Lat Pulldown',     sets: 2, reps: 12 }
+        { name: 'Leg Press',          sets: 2, reps: 12, muscle: 'Legs' },
+        { name: 'Seated Chest Press', sets: 2, reps: 12, muscle: 'Chest' },
+        { name: 'Seated Row',         sets: 2, reps: 12, muscle: 'Back' },
+        { name: 'Lat Pulldown',       sets: 2, reps: 12, muscle: 'Back' }
       ],
       B: [
-        { name: 'Leg Press',        sets: 2, reps: 12 },
-        { name: 'Seated Chest Press', sets: 2, reps: 12 },
-        { name: 'Seated Row',       sets: 2, reps: 12 },
-        { name: 'Lat Pulldown',     sets: 2, reps: 12 }
+        { name: 'Leg Press',          sets: 2, reps: 12, muscle: 'Legs' },
+        { name: 'Seated Chest Press', sets: 2, reps: 12, muscle: 'Chest' },
+        { name: 'Seated Row',         sets: 2, reps: 12, muscle: 'Back' },
+        { name: 'Lat Pulldown',       sets: 2, reps: 12, muscle: 'Back' }
       ]
     };
 
-    // Apply Telegram theme
-    function applyTheme() {
-      const root = document.documentElement.style;
-      if (Tg.backgroundColor) root.setProperty('--tg-bg', Tg.backgroundColor);
-      if (Tg.textColor) root.setProperty('--tg-text', Tg.textColor);
-      if (Tg.hintColor) root.setProperty('--text-secondary', Tg.hintColor);
-      if (Tg.buttonColor) root.setProperty('--accent', Tg.buttonColor);
-      if (Tg.buttonTextColor) root.setProperty('--tg-button-text', Tg.buttonTextColor);
-      if (Tg.secondaryBackgroundColor) {
-        root.setProperty('--surface', Tg.secondaryBackgroundColor);
-        root.setProperty('--surface-raised', Tg.secondaryBackgroundColor);
+    // ── localStorage history ──
+    function getHistory() {
+      try { return JSON.parse(localStorage.getItem('workout_history') || '[]'); } catch { return []; }
+    }
+    function saveToHistory(entry) {
+      try {
+        const h = getHistory();
+        h.unshift(entry);
+        localStorage.setItem('workout_history', JSON.stringify(h.slice(0, 100)));
+      } catch {}
+    }
+    function getWeekCount(history) {
+      const now = new Date();
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - now.getDay());
+      weekStart.setHours(0, 0, 0, 0);
+      return history.filter(s => new Date(s.timestamp) >= weekStart).length;
+    }
+    function getStreak(history) {
+      if (!history.length) return 0;
+      const days = new Set(history.map(s => s.date));
+      let streak = 0;
+      const d = new Date();
+      while (days.has(d.toISOString().split('T')[0])) {
+        streak++;
+        d.setDate(d.getDate() - 1);
+      }
+      return streak;
+    }
+
+    // ── Navigation ──
+    let currentScreen = 'home';
+    function showScreen(name) {
+      if (name === currentScreen) return;
+      document.getElementById('screen-' + currentScreen).classList.remove('active');
+      document.getElementById('screen-' + name).classList.add('active');
+      currentScreen = name;
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.screen === name));
+      if (name === 'home')    refreshHome();
+      if (name === 'history') renderHistory();
+    }
+
+    // ── Home ──
+    const WEEKLY_GOAL = 3;
+    const CIRC = 2 * Math.PI * 56; // r=56 → 351.86
+
+    function refreshHome() {
+      const history   = getHistory();
+      const weekCount = getWeekCount(history);
+      const streak    = getStreak(history);
+
+      // Ring
+      const fill = document.getElementById('ringFill');
+      fill.style.strokeDasharray  = CIRC;
+      fill.style.strokeDashoffset = CIRC * (1 - Math.min(weekCount / WEEKLY_GOAL, 1));
+      document.getElementById('ringCount').textContent = weekCount;
+      document.getElementById('ringGoal').textContent  = `/ ${WEEKLY_GOAL} this week`;
+
+      // Stats
+      document.getElementById('statTotal').textContent  = history.length;
+      document.getElementById('statStreak').textContent = streak;
+      document.getElementById('statWeek').textContent   = weekCount;
+
+      // Recent sessions
+      const el     = document.getElementById('recentSessions');
+      const recent = history.slice(0, 3);
+      if (!recent.length) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">🏋️</div><div class="empty-title">No sessions yet</div><div class="empty-sub">Start your first workout and it'll appear here</div></div>`;
+      } else {
+        el.innerHTML = recent.map(s => {
+          const d       = new Date(s.timestamp);
+          const exText  = `${s.exerciseCount} exercise${s.exerciseCount !== 1 ? 's' : ''}`;
+          const cardio  = s.cardioMin ? ` · ${s.cardioMin}min cardio` : '';
+          const dateTag = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return `<div class="session-card">
+            <div class="session-icon-wrap">🏋️</div>
+            <div class="session-info">
+              <div class="session-title">${s.workout}</div>
+              <div class="session-meta">${exText}${cardio}</div>
+            </div>
+            <div class="session-badge">${dateTag}</div>
+          </div>`;
+        }).join('');
       }
     }
-    applyTheme();
 
-    // Date
-    const today = new Date();
-    document.getElementById('dateDisplay').textContent = today.toLocaleDateString('en-US', {
-      weekday: 'long', month: 'long', day: 'numeric'
-    });
+    // ── History ──
+    function renderHistory() {
+      const history   = getHistory();
+      const weekCount = getWeekCount(history);
+      const streak    = getStreak(history);
 
+      document.getElementById('hStatTotal').textContent  = history.length;
+      document.getElementById('hStatWeek').textContent   = weekCount;
+      document.getElementById('hStatStreak').textContent = streak;
+
+      const el = document.getElementById('histList');
+      if (!history.length) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No history yet</div><div class="empty-sub">Complete a workout and it will appear here</div></div>`;
+        return;
+      }
+      el.innerHTML = history.map(s => {
+        const d      = new Date(s.timestamp);
+        const dayNum = d.getDate();
+        const mon    = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+        const meta   = [
+          `${s.exerciseCount} exercise${s.exerciseCount !== 1 ? 's' : ''}`,
+          s.cardioMin ? `${s.cardioMin}min ${s.cardioType || 'cardio'}` : '',
+          s.notes ? s.notes.slice(0, 28) + (s.notes.length > 28 ? '…' : '') : ''
+        ].filter(Boolean).join(' · ');
+        return `<div class="hist-item">
+          <div class="hist-date-badge"><div class="hist-day">${dayNum}</div><div class="hist-mon">${mon}</div></div>
+          <div class="hist-info">
+            <div class="hist-workout">${s.workout}</div>
+            <div class="hist-meta">${meta}</div>
+          </div>
+          <div class="hist-check">${s.exerciseCount > 0 ? '✓' : ''}</div>
+        </div>`;
+      }).join('');
+    }
+
+    // ── Day selection ──
     function selectDay(day) {
       currentDay = day;
       document.getElementById('btnDayA').classList.toggle('active', day === 'A');
@@ -547,16 +716,19 @@
       renderExercises();
     }
 
+    // ── Render exercises ──
     function renderExercises() {
       const container = document.getElementById('exercises');
       const exs = workouts[currentDay];
-
       container.innerHTML = exs.map((ex, i) => `
         <div class="exercise-card" id="card_${currentDay}_${i}">
           <div class="ex-header">
             <div>
-              <span class="ex-name">${ex.name}</span>
-              <span class="ex-meta"> · ${ex.sets} sets</span>
+              <div class="ex-name">${ex.name}</div>
+              <div class="ex-meta-row">
+                <span class="ex-sets-badge">${ex.sets} sets · ${ex.reps} reps</span>
+                <span class="ex-muscle-chip">${ex.muscle}</span>
+              </div>
             </div>
             <label class="skip-toggle" onclick="toggleSkip('${currentDay}',${i})">
               <span class="skip-label">Skip</span>
@@ -570,107 +742,114 @@
               <input type="number" id="w_${currentDay}_${i}" min="0" max="999" placeholder="0" inputmode="decimal">
             </div>
             <div class="input-group">
-              <label>lbs</label>
-              <input type="text" disabled style="opacity:0.5;font-size:13px;text-align:center" value="—">
-            </div>
-            <div class="input-group">
               <label>Reps</label>
               <input type="number" id="r_${currentDay}_${i}" min="0" max="50" value="${ex.reps}" inputmode="numeric">
             </div>
             <div class="input-group">
-              <label>Done</label>
+              <label>Sets Done</label>
               <input type="number" id="s_${currentDay}_${i}" min="0" max="10" value="${ex.sets}" inputmode="numeric">
             </div>
           </div>
         </div>
       `).join('');
-
       updateCount();
     }
 
     function toggleSkip(day, i) {
-      const cb = document.getElementById('skip_' + day + '_' + i);
+      const cb   = document.getElementById('skip_' + day + '_' + i);
       const card = document.getElementById('card_' + day + '_' + i);
-      const inputs = card.querySelectorAll('input[type="number"]');
-      inputs.forEach(inp => { inp.disabled = cb.checked; });
+      card.querySelectorAll('input[type="number"]').forEach(inp => { inp.disabled = cb.checked; });
       card.classList.toggle('skipped', cb.checked);
       updateCount();
     }
 
     function updateCount() {
-      const cards = document.querySelectorAll('.exercise-card');
       let active = 0;
-      cards.forEach(c => { if (!c.classList.contains('skipped')) active++; });
+      document.querySelectorAll('.exercise-card').forEach(c => { if (!c.classList.contains('skipped')) active++; });
       document.getElementById('exCount').textContent = active + ' exercise' + (active !== 1 ? 's' : '');
     }
 
-    function showToast(msg, success) {
+    // ── Toast ──
+    function showToast(msg, type) {
       const t = document.getElementById('toast');
       t.textContent = msg;
-      t.className = 'toast' + (success ? ' success' : '') + ' show';
-      setTimeout(() => { t.classList.remove('show'); }, 2000);
+      t.className = 'toast show' + (type ? ' ' + type : '');
+      setTimeout(() => { t.classList.remove('show'); }, 2200);
     }
 
+    // ── Submit (data contract unchanged) ──
     function submitWorkout() {
       const exercises = [];
       let totalExercises = 0;
       const exs = workouts[currentDay];
 
       exs.forEach((ex, i) => {
-        const skipped = document.getElementById('skip_' + currentDay + '_' + i);
+        const skipped  = document.getElementById('skip_' + currentDay + '_' + i);
         const isSkipped = skipped ? skipped.checked : false;
-        const weight = parseFloat(document.getElementById('w_' + currentDay + '_' + i)?.value) || 0;
-        const reps = parseInt(document.getElementById('r_' + currentDay + '_' + i)?.value) || 0;
-        const sets = parseInt(document.getElementById('s_' + currentDay + '_' + i)?.value) || 0;
+        const weight   = parseFloat(document.getElementById('w_' + currentDay + '_' + i)?.value) || 0;
+        const reps     = parseInt(document.getElementById('r_' + currentDay + '_' + i)?.value)   || 0;
+        const sets     = parseInt(document.getElementById('s_' + currentDay + '_' + i)?.value)   || 0;
 
         if (!isSkipped && (weight > 0 || reps > 0 || sets > 0)) totalExercises++;
 
         exercises.push({
-          name: ex.name,
-          weight: isSkipped ? 0 : weight,
-          reps: isSkipped ? 0 : reps,
-          sets: isSkipped ? 0 : sets,
+          name:    ex.name,
+          weight:  isSkipped ? 0 : weight,
+          reps:    isSkipped ? 0 : reps,
+          sets:    isSkipped ? 0 : sets,
           skipped: isSkipped
         });
       });
 
-      if (totalExercises === 0) {
-        const cardioType = document.getElementById('cardioType').value;
-        const cardioMin = parseInt(document.getElementById('cardioMin').value) || 0;
-        if (!cardioType && !cardioMin) {
-          showToast('Log at least one exercise', false);
-          return;
-        }
-      }
+      const cardioType = document.getElementById('cardioType').value;
+      const cardioMin  = parseInt(document.getElementById('cardioMin').value) || 0;
 
-      const data = {
-        type: 'workout_log',
-        date: today.toISOString().split('T')[0],
-        workout: 'Day ' + currentDay,
-        exercises: exercises,
-        cardio_type: document.getElementById('cardioType').value || '',
-        cardio_min: parseInt(document.getElementById('cardioMin').value) || 0,
-        notes: document.getElementById('notes').value || ''
-      };
-
-      if (!isTelegram) {
-        showToast('📱 Open in Telegram to log workouts', false);
+      if (totalExercises === 0 && !cardioType && !cardioMin) {
+        showToast('Log at least one exercise', 'error');
         return;
       }
 
-      showToast('Logging...', true);
+      const data = {
+        type:        'workout_log',
+        date:        today.toISOString().split('T')[0],
+        workout:     'Day ' + currentDay,
+        exercises:   exercises,
+        cardio_type: cardioType || '',
+        cardio_min:  cardioMin,
+        notes:       document.getElementById('notes').value || ''
+      };
+
+      if (!isTelegram) {
+        showToast('📱 Open in Telegram to log workouts', 'error');
+        return;
+      }
+
+      // Persist locally before sending
+      saveToHistory({
+        date:          data.date,
+        workout:       data.workout,
+        exerciseCount: totalExercises,
+        cardioType:    cardioType,
+        cardioMin:     cardioMin,
+        notes:         data.notes,
+        timestamp:     new Date().toISOString()
+      });
+
+      showToast('Logging...', 'success');
       document.getElementById('submitBtn').disabled = true;
 
       try {
         Tg.sendData(JSON.stringify(data));
-        showToast('✅ Workout logged!', true);
+        showToast('✅ Workout logged!', 'success');
         setTimeout(() => { if (isTelegram) Tg.close(); }, 1200);
       } catch (err) {
-        showToast('Error sending data. Try again.', false);
+        showToast('Error sending data. Try again.', 'error');
         document.getElementById('submitBtn').disabled = false;
       }
     }
 
+    // ── Init ──
+    refreshHome();
     renderExercises();
   </script>
 </body>
