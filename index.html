@@ -595,7 +595,7 @@
       document.getElementById('app').classList.add('has-banner');
     }
 
-    // ── URL params: ?prev=, ?day=, ?ago= ──
+    // ── URL params: ?prev=, ?day=, ?ago=, ?sets=, ?reps= ──
     const _qp = new URLSearchParams(window.location.search);
     let prevWeights = {};
     try {
@@ -607,6 +607,8 @@
     } catch {}
     const suggestedDay = _qp.get('day') || 'A';
     const daysAgo = _qp.has('ago') ? parseInt(_qp.get('ago')) : null;
+    const progSets = parseInt(_qp.get('sets')) || 0;
+    const progReps = parseInt(_qp.get('reps')) || 0;
     if (_qp.has('day')) {
       let agoLabel = '';
       if (daysAgo === null)  agoLabel = '';
@@ -800,6 +802,8 @@
     function renderExercises() {
       const container = document.getElementById('exercises');
       const exs = workouts[currentDay];
+      const effSets = progSets || exs[0].sets;
+      const effReps = progReps || exs[0].reps;
       container.innerHTML = exs.map((ex, i) => {
         const prev = prevWeights[ex.name];
         const prevW = Array.isArray(prev) ? prev[0] : prev;
@@ -820,7 +824,7 @@
             <div>
               <div class="ex-name">${ex.name}</div>
               <div class="ex-meta-row">
-                <span class="ex-sets-badge">${ex.sets} sets · ${ex.reps} reps</span>
+                <span class="ex-sets-badge">${effSets} sets · ${effReps} reps</span>
                 <span class="ex-muscle-chip">${ex.muscle}</span>
               </div>
               ${lastLine}
@@ -839,11 +843,11 @@
             </div>
             <div class="input-group">
               <label>Reps</label>
-              <input type="number" id="r_${currentDay}_${i}" min="0" max="50" value="${ex.reps}" inputmode="numeric">
+              <input type="number" id="r_${currentDay}_${i}" min="0" max="50" value="${effReps}" inputmode="numeric">
             </div>
             <div class="input-group">
               <label>Sets Done</label>
-              <input type="number" id="s_${currentDay}_${i}" min="0" max="10" value="${ex.sets}" inputmode="numeric">
+              <input type="number" id="s_${currentDay}_${i}" min="0" max="10" value="${effSets}" inputmode="numeric">
             </div>
           </div>
           <div class="ex-timer-row">

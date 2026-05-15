@@ -4225,6 +4225,20 @@ class TelegramAdapter(BasePlatformAdapter):
                 return next_day, days_ago
         return "A", None
 
+    def _get_program_phase(self) -> tuple:
+        """Return (week_label, sets, reps) based on total completed sessions.
+        Week 1 (Foundation): 2x12  → sessions 1-6
+        Week 2 (Volume):     3x10  → sessions 7-12
+        Week 3 (Strength):   3x8   → sessions 13+"""
+        history = self._read_log_history(limit=1000)
+        sessions = len({(r["date"], r["workout"]) for r in history if r["workout"]})
+        if sessions >= 13:
+            return ("Week 3 · Strength", 3, 8)
+        elif sessions >= 7:
+            return ("Week 2 · Volume", 3, 10)
+        else:
+            return ("Week 1 · Foundation", 2, 12)
+
     def _get_last_weights(self) -> dict:
         """Return {exercise_name: [weight, reps, sets]} for the most recent logged session per exercise."""
         history = self._read_log_history(limit=500)
@@ -4438,8 +4452,9 @@ class TelegramAdapter(BasePlatformAdapter):
 
     async def _send_workout_button(self, update: Update) -> None:
         """Send inline keyboard with WebApp button.
-        URL carries ?day=, ?ago=, and ?prev= so the Mini App can pre-select the
-        correct day tab, show a contextual hint, and pre-fill last session weights."""
+        URL carries ?day=, ?ago=, ?prev=, ?sets=, ?reps= so the Mini App can
+        pre-select the day, show hints, pre-fill weights, and apply the current
+        program phase's rep scheme."""
         try:
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
         except ImportError:
@@ -4460,6 +4475,14 @@ class TelegramAdapter(BasePlatformAdapter):
         except Exception:
             pass
 
+        # Inject program phase (sets / reps overrides)
+        try:
+            week_label, prog_sets, prog_reps = self._get_program_phase()
+            params.append(f"sets={prog_sets}")
+            params.append(f"reps={prog_reps}")
+        except Exception:
+            week_label = ""
+
         # Inject next-day suggestion
         try:
             next_day, days_ago = self._get_next_day()
@@ -4474,7 +4497,8 @@ class TelegramAdapter(BasePlatformAdapter):
                 ago_label = "last session yesterday"
             else:
                 ago_label = f"last session {days_ago} days ago"
-            hint_text = f"💡 *Day {next_day}* up next · {ago_label}\nTap below to start:"
+            phase_line = f" · {week_label}" if week_label else ""
+            hint_text = f"💡 *Day {next_day}* up next · {ago_label}{phase_line}\nTap below to start:"
         except Exception:
             pass
 
