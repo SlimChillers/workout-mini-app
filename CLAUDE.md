@@ -58,6 +58,7 @@ The bot's `_send_workout_button` constructs the WebApp URL with these query para
 - `sets=<n>&reps=<n>` — current program-phase rep scheme (Phase 10)
 - `deload=1` — set when `_should_deload` fires (≥9 sessions AND ≥2 plateaued lifts); mini app renders a banner with a one-tap "Apply" that scales weights × 0.9 and drops a set when current sets ≥ 3
 - `subs=<base64>` — JSON of `{exerciseName: [alt1, alt2, ...]}` so the mini app's swap menu can offer alternatives; catalog is owned by the bot (`SUBSTITUTES` constant in `telegram_workout.py`) so it can be updated without a Pages redeploy
+- `next=<base64>` — JSON of `{exerciseName: [suggestedWeight, reason]}` for auto-progression (Phase 13). `reason ∈ {"progress", "hold"}`. When present, the mini app uses `suggestedWeight` as the weight input's pre-filled value (overriding `prev`) and renders a coloured badge: green "↑ +N (hit target)" for `"progress"`, grey "hold (didn't hit target)" for `"hold"`. Omitted on deload weeks — the bot's `_get_next_weights` returns `{}` when `_should_deload` fires, so the mini app falls back to the legacy "+2.5 chip"
 
 ### Design
 - Dark theme by default with light mode via `prefers-color-scheme`

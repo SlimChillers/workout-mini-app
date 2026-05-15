@@ -394,6 +394,8 @@
       cursor: pointer; transition: all var(--tr); user-select: none;
     }
     .hint-chip:active { opacity: 0.7; transform: scale(0.95); }
+    .progress-chip { color: #4ade80; background: rgba(74, 222, 128, 0.12); }
+    .hold-chip     { color: var(--tg-hint, #888); background: rgba(128,128,128,0.12); cursor: default; }
     .ex-last {
       font-size: 12px; color: var(--text-secondary); font-weight: 500;
       margin-top: 4px;
@@ -670,6 +672,14 @@
         prevWeights = JSON.parse(atob(padded));
       }
     } catch {}
+    let nextWeights = {};
+    try {
+      const b64 = _qp.get('next');
+      if (b64) {
+        const padded = b64.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice(0, (4 - b64.length % 4) % 4);
+        nextWeights = JSON.parse(atob(padded));
+      }
+    } catch {}
     const suggestedDay = _qp.get('day') || 'A';
     const daysAgo = _qp.has('ago') ? parseInt(_qp.get('ago')) : null;
     const progSets = parseInt(_qp.get('sets')) || 0;
@@ -907,14 +917,28 @@
         const prevW = Array.isArray(prev) ? prev[0] : prev;
         const prevR = Array.isArray(prev) ? prev[1] : null;
         const hasPrev = prevW !== undefined && prevW > 0;
-        const suggested = hasPrev ? +(prevW + 2.5).toFixed(1) : null;
-        const weightVal  = hasPrev ? ` value="${prevW}"` : '';
+        const nxt = nextWeights[shownName];
+        const hasNext = Array.isArray(nxt) && nxt[0] > 0;
+        const nextW = hasNext ? nxt[0] : null;
+        const nextReason = hasNext ? nxt[1] : null;
+        // Value priority: next > prev > empty
+        const inputW = hasNext ? nextW : (hasPrev ? prevW : null);
+        const weightVal = inputW !== null ? ` value="${inputW}"` : '';
         const lastLine = hasPrev
           ? `<div class="ex-last">Last: ${prevW} lbs × ${prevR}</div>`
           : '';
-        const chip = hasPrev
-          ? `<span class="hint-chip" onclick="setWeight('${currentDay}',${i},${suggested})">+2.5 → ${suggested} lbs</span>`
-          : '';
+        // Badge (auto-progression) or chip (legacy nudge fallback)
+        let chip = '';
+        if (hasNext && nextReason === 'progress') {
+          const delta = (nextW - prevW).toFixed(1).replace(/\.0$/, '');
+          chip = `<span class="hint-chip progress-chip">↑ +${delta} (hit target)</span>`;
+        } else if (hasNext && nextReason === 'hold') {
+          chip = `<span class="hint-chip hold-chip">hold (didn't hit target)</span>`;
+        } else if (hasPrev) {
+          // Legacy fallback — bot didn't send next= (e.g. deload week or older bot version)
+          const suggested = +(prevW + 2.5).toFixed(1);
+          chip = `<span class="hint-chip" onclick="setWeight('${currentDay}',${i},${suggested})">+2.5 → ${suggested} lbs</span>`;
+        }
         return `
         <div class="exercise-card" id="card_${currentDay}_${i}">
           <div class="ex-header">

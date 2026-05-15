@@ -4307,6 +4307,42 @@ class TelegramAdapter(BasePlatformAdapter):
         weights = [r["weight"] for r in sessions[-threshold:]]
         return len(set(weights)) == 1
 
+    def _progression_increment(self, exercise: str) -> float:
+        """Return weight increment for auto-progression. Lower body bumps faster."""
+        cat = self.EXERCISE_CATEGORY.get(exercise, "upper")
+        return 5.0 if cat == "lower" else 2.5
+
+    def _get_next_weights(
+        self,
+        history: list[dict],
+        prog_sets: int,
+        prog_reps: int,
+    ) -> dict:
+        """Return {exercise: [suggested_weight, reason]} for the next session.
+        reason ∈ {"progress", "hold"}. Caller must skip this entirely on deload weeks
+        (we don't check should_deload here — _send_workout_button does).
+        Mirrors Phase 3's plateau logic in reverse: same weight = stall, but here we
+        use it as the anti-ping-pong guard so we don't bump on a freshly-bumped lift."""
+        out: dict = {}
+        last_by_ex: dict = {}
+        for row in history:
+            nm = row.get("exercise", "")
+            if not nm or "cardio" in nm.lower():
+                continue
+            if row.get("weight", 0) <= 0:
+                continue
+            last_by_ex[nm] = row
+        for nm, row in last_by_ex.items():
+            hit_target = row["sets"] >= prog_sets and row["reps"] >= prog_reps
+            already_plateau = self._is_plateau(nm, history, threshold=2)
+            if hit_target and not already_plateau:
+                bumped = row["weight"] + self._progression_increment(nm)
+                bumped = round(bumped * 2) / 2
+                out[nm] = [bumped, "progress"]
+            else:
+                out[nm] = [row["weight"], "hold"]
+        return out
+
     SUBSTITUTES = {
         "Leg Press":          ["Hack Squat", "Leg Extension", "Goblet Squat"],
         "Seated Chest Press": ["Smith Bench Press", "Chest Fly Machine", "Push-up"],
@@ -4316,6 +4352,40 @@ class TelegramAdapter(BasePlatformAdapter):
         "Seated Row":         ["T-Bar Row", "Cable Row", "Single-arm DB Row"],
         "Bicep Curl":         ["Hammer Curl", "Preacher Curl", "Cable Curl"],
         "Cable Crunch":       ["Hanging Leg Raise", "Decline Sit-up", "Plank"],
+    }
+
+    EXERCISE_CATEGORY = {
+        "Leg Press": "lower",
+        "Seated Chest Press": "upper",
+        "Shoulder Press": "upper",
+        "Tricep Pushdown": "upper",
+        "Lat Pulldown": "upper",
+        "Seated Row": "upper",
+        "Bicep Curl": "upper",
+        "Cable Crunch": "upper",
+        "Hack Squat": "lower",
+        "Leg Extension": "lower",
+        "Goblet Squat": "lower",
+        "Smith Bench Press": "upper",
+        "Chest Fly Machine": "upper",
+        "Push-up": "upper",
+        "Smith Shoulder Press": "upper",
+        "Lateral Raise": "upper",
+        "Arnold Press": "upper",
+        "Overhead Tricep Extension": "upper",
+        "Skull Crusher": "upper",
+        "Dip Machine": "upper",
+        "Assisted Pull-up": "upper",
+        "Straight-arm Pulldown": "upper",
+        "Cable Row": "upper",
+        "T-Bar Row": "upper",
+        "Single-arm DB Row": "upper",
+        "Hammer Curl": "upper",
+        "Preacher Curl": "upper",
+        "Cable Curl": "upper",
+        "Hanging Leg Raise": "upper",
+        "Decline Sit-up": "upper",
+        "Plank": "upper",
     }
 
     def _should_deload(self, history: list[dict]) -> tuple[bool, list[str]]:
@@ -4586,6 +4656,8 @@ class TelegramAdapter(BasePlatformAdapter):
             pass
 
         # Inject program phase (sets / reps overrides)
+        prog_sets = 0
+        prog_reps = 0
         try:
             week_label, prog_sets, prog_reps = self._get_program_phase(history=history)
             params.append(f"sets={prog_sets}")
@@ -4613,10 +4685,21 @@ class TelegramAdapter(BasePlatformAdapter):
             pass
 
         # Deload suggestion: surface a recommendation when plateaus persist across lifts
+        should_deload = False
         try:
             should_deload, _plateaued = self._should_deload(history)
             if should_deload:
                 params.append("deload=1")
+        except Exception:
+            pass
+
+        try:
+            if not should_deload:
+                import base64 as _b64
+                nxt = self._get_next_weights(history, prog_sets, prog_reps)
+                if nxt:
+                    encoded = _b64.urlsafe_b64encode(json.dumps(nxt).encode()).decode().rstrip("=")
+                    params.append(f"next={encoded}")
         except Exception:
             pass
 
