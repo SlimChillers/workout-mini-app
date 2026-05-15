@@ -314,6 +314,12 @@
     .notes-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
     .notes-input::placeholder { color: var(--text-secondary); }
 
+    .volume-badge {
+      text-align: center; padding: 8px 0 10px;
+      font-size: 13px; color: var(--text-secondary); font-weight: 500;
+    }
+    .volume-badge span { color: var(--text); font-weight: 700; }
+
     .submit-btn {
       width: 100%; padding: 16px; border-radius: var(--radius); border: none;
       background: var(--accent); color: var(--accent-text);
@@ -524,6 +530,7 @@
           </div>
         </div>
         <textarea class="notes-input" id="notes" placeholder="Notes (how'd it feel?)" maxlength="200" rows="2"></textarea>
+        <div class="volume-badge">Total: <span id="liveVolume">0</span> lbs</div>
         <button class="submit-btn" onclick="submitWorkout()" id="submitBtn">
           ✅ Log Workout <span class="count" id="exCount">5 exercises</span>
         </button>
@@ -859,6 +866,19 @@
       let active = 0;
       document.querySelectorAll('.exercise-card').forEach(c => { if (!c.classList.contains('skipped')) active++; });
       document.getElementById('exCount').textContent = active + ' exercise' + (active !== 1 ? 's' : '');
+      updateVolume();
+    }
+
+    function updateVolume() {
+      let total = 0;
+      document.querySelectorAll('.exercise-card').forEach(c => {
+        if (c.classList.contains('skipped')) return;
+        const w = parseFloat(c.querySelector('input[id^="w_"]')?.value) || 0;
+        const r = parseInt(c.querySelector('input[id^="r_"]')?.value) || 0;
+        const s = parseInt(c.querySelector('input[id^="s_"]')?.value) || 0;
+        total += w * r * s;
+      });
+      document.getElementById('liveVolume').textContent = total.toLocaleString();
     }
 
     // ── Rest Timer ──
@@ -1000,6 +1020,8 @@
     }
 
     // ── Init ──
+    // Live volume recalculation on any exercise input change
+    document.getElementById('exercises').addEventListener('input', updateVolume);
     refreshHome();
     selectDay(suggestedDay);
   </script>
