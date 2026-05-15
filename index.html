@@ -392,6 +392,31 @@
       font-size: 12px; color: var(--text-secondary); font-weight: 500;
       margin-top: 4px;
     }
+
+    /* ── Rest Timer ── */
+    .ex-timer-row { display: flex; align-items: center; justify-content: flex-end; margin-top: 10px; }
+    .ex-timer-btn {
+      display: flex; align-items: center; gap: 5px;
+      padding: 6px 12px; border-radius: 20px;
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--text-secondary); font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all var(--tr); user-select: none;
+      font-family: inherit;
+    }
+    .ex-timer-btn:active { transform: scale(0.95); }
+    .ex-timer-btn.running {
+      background: var(--accent-glow); border-color: var(--accent);
+      color: var(--accent);
+    }
+    .ex-timer-btn.done {
+      background: rgba(48,209,88,0.15); border-color: var(--success);
+      color: var(--success); animation: timer-pulse 0.6s ease-out;
+    }
+    @keyframes timer-pulse {
+      0% { transform: scale(1); }
+      40% { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
   </style>
 </head>
 <body>
@@ -814,6 +839,9 @@
               <input type="number" id="s_${currentDay}_${i}" min="0" max="10" value="${ex.sets}" inputmode="numeric">
             </div>
           </div>
+          <div class="ex-timer-row">
+            <button class="ex-timer-btn" onclick="event.stopPropagation(); startTimer('${currentDay}',${i})">⏱ 90s</button>
+          </div>
         </div>`;
       }).join('');
       updateCount();
@@ -831,6 +859,65 @@
       let active = 0;
       document.querySelectorAll('.exercise-card').forEach(c => { if (!c.classList.contains('skipped')) active++; });
       document.getElementById('exCount').textContent = active + ' exercise' + (active !== 1 ? 's' : '');
+    }
+
+    // ── Rest Timer ──
+    let activeTimerId = null;
+    let activeTimerCard = null;
+    let activeTimerRemaining = 0;
+    const REST_SECONDS = 90;
+
+    function stopTimer() {
+      if (activeTimerId) { clearInterval(activeTimerId); activeTimerId = null; }
+      if (activeTimerCard) {
+        const btn = activeTimerCard.querySelector('.ex-timer-btn');
+        if (btn) { btn.classList.remove('running'); btn.textContent = '⏱ 90s'; }
+        activeTimerCard = null;
+      }
+    }
+
+    function tickTimer() {
+      activeTimerRemaining--;
+      if (activeTimerCard) {
+        const btn = activeTimerCard.querySelector('.ex-timer-btn');
+        if (btn) {
+          const m = Math.floor(activeTimerRemaining / 60);
+          const s = activeTimerRemaining % 60;
+          btn.textContent = m + ':' + String(s).padStart(2, '0');
+        }
+      }
+      if (activeTimerRemaining <= 0) {
+        clearInterval(activeTimerId);
+        activeTimerId = null;
+        if (activeTimerCard) {
+          const btn = activeTimerCard.querySelector('.ex-timer-btn');
+          if (btn) {
+            btn.classList.remove('running');
+            btn.classList.add('done');
+            btn.textContent = 'Done ✓';
+          }
+          if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+          const card = activeTimerCard;
+          setTimeout(() => {
+            const b = card.querySelector('.ex-timer-btn');
+            if (b) { b.classList.remove('done'); b.textContent = '⏱ 90s'; }
+          }, 2000);
+          activeTimerCard = null;
+        }
+      }
+    }
+
+    function startTimer(day, i) {
+      stopTimer();
+      const card = document.getElementById('card_' + day + '_' + i);
+      const btn = card.querySelector('.ex-timer-btn');
+      activeTimerCard = card;
+      activeTimerRemaining = REST_SECONDS;
+      btn.classList.add('running');
+      const m = Math.floor(activeTimerRemaining / 60);
+      const s = activeTimerRemaining % 60;
+      btn.textContent = m + ':' + String(s).padStart(2, '0');
+      activeTimerId = setInterval(tickTimer, 1000);
     }
 
     // ── Toast ──
