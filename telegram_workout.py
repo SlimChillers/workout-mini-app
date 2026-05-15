@@ -4108,6 +4108,63 @@ class TelegramAdapter(BasePlatformAdapter):
                 logger.error("[Telegram] wk:progress callback error: %s", e)
             return
 
+        if action == "progress_cardio":
+            await query.answer()
+            try:
+                history = self._read_log_history(limit=300)
+                seen: set = set()
+                cardio_exs = []
+                for row in history:
+                    nm = row["exercise"]
+                    if "cardio" in nm.lower() and nm.lower() not in seen:
+                        seen.add(nm.lower())
+                        cardio_exs.append(nm)
+                if not cardio_exs:
+                    await query.edit_message_text("No cardio history found.")
+                    return
+                from telegram import InlineKeyboardButton as _IKB, InlineKeyboardMarkup as _IKM
+                rows_kb = []
+                for i in range(0, len(cardio_exs), 2):
+                    row_btns = [_IKB(cardio_exs[i], callback_data=f"wk:progress:{cardio_exs[i]}")]
+                    if i + 1 < len(cardio_exs):
+                        row_btns.append(_IKB(cardio_exs[i + 1], callback_data=f"wk:progress:{cardio_exs[i + 1]}"))
+                    rows_kb.append(row_btns)
+                rows_kb.append([_IKB("← Back", callback_data="wk:progress_back")])
+                await query.edit_message_text("Choose a cardio type:", reply_markup=_IKM(rows_kb))
+            except Exception as e:
+                logger.error("[Telegram] wk:progress_cardio callback error: %s", e)
+            return
+
+        if action == "progress_back":
+            await query.answer()
+            try:
+                history = self._read_log_history(limit=300)
+                seen: set = set()
+                exercises = []
+                for row in history:
+                    nm = row["exercise"]
+                    if nm.lower() not in seen:
+                        seen.add(nm.lower())
+                        exercises.append(nm)
+                if not exercises:
+                    await query.edit_message_text("No workout history found yet.")
+                    return
+                weight_exs = [nm for nm in exercises if "cardio" not in nm.lower()]
+                cardio_exs = [nm for nm in exercises if "cardio" in nm.lower()]
+                from telegram import InlineKeyboardButton as _IKB, InlineKeyboardMarkup as _IKM
+                rows_kb = []
+                for i in range(0, len(weight_exs), 2):
+                    row_btns = [_IKB(weight_exs[i], callback_data=f"wk:progress:{weight_exs[i]}")]
+                    if i + 1 < len(weight_exs):
+                        row_btns.append(_IKB(weight_exs[i + 1], callback_data=f"wk:progress:{weight_exs[i + 1]}"))
+                    rows_kb.append(row_btns)
+                if cardio_exs:
+                    rows_kb.append([_IKB("🏃 Cardio", callback_data="wk:progress_cardio")])
+                await query.edit_message_text("Choose an exercise to view progress:", reply_markup=_IKM(rows_kb))
+            except Exception as e:
+                logger.error("[Telegram] wk:progress_back callback error: %s", e)
+            return
+
         if action == "history":
             page_str = parts[2] if len(parts) > 2 else "0"
             try:
@@ -4259,6 +4316,13 @@ class TelegramAdapter(BasePlatformAdapter):
         total_volume = sum(r["weight"] * r["reps"] * r["sets"] for r in history if r["weight"] > 0 and "cardio" not in r.get("exercise", "").lower())
         total_cardio = sum(r["reps"] for r in history if "cardio" in r.get("exercise", "").lower())
 
+        cardio_by_type: dict = {}
+        for r in history:
+            if "cardio" in r.get("exercise", "").lower():
+                parts = r["exercise"].split(":", 1)
+                ctype = parts[1].strip() if len(parts) > 1 else r["exercise"]
+                cardio_by_type[ctype] = cardio_by_type.get(ctype, 0) + r["reps"]
+
         ex_counts: dict = {}
         for r in history:
             nm = r["exercise"]
@@ -4280,6 +4344,7 @@ class TelegramAdapter(BasePlatformAdapter):
             "total_sessions": total_sessions,
             "total_volume": int(total_volume),
             "total_cardio": int(total_cardio),
+            "cardio_by_type": cardio_by_type,
             "first_date": first_date,
             "most_trained": most_trained,
             "avg_per_week": avg_per_week,
@@ -4402,28 +4467,37 @@ class TelegramAdapter(BasePlatformAdapter):
         import base64 as _b64
         return _b64.urlsafe_b64encode(json.dumps(self.SUBSTITUTES).encode()).decode().rstrip("=")
 
-    def _build_progress_chart_url(self, exercise: str, rows: list[dict]) -> str:
+    def _build_progress_chart_url(self, exercise: str, rows: list[dict], is_cardio: bool = False) -> str:
         """Build a quickchart.io GET URL for a weight-over-time line chart."""
         import urllib.parse as _ul
         dates = [r["date"] for r in rows]
-        weights = [r["weight"] for r in rows]
+        if is_cardio:
+            y_data = [r["reps"] for r in rows]
+            y_label = "minutes"
+            border_color = "#FF9800"
+            background_color = "rgba(255,152,0,0.1)"
+        else:
+            y_data = [r["weight"] for r in rows]
+            y_label = "lbs"
+            border_color = "#4CAF50"
+            background_color = "rgba(76,175,80,0.1)"
         chart = {
             "type": "line",
             "data": {
                 "labels": dates,
                 "datasets": [{
                     "label": exercise,
-                    "data": weights,
+                    "data": y_data,
                     "fill": False,
-                    "borderColor": "#4CAF50",
-                    "backgroundColor": "rgba(76,175,80,0.1)",
+                    "borderColor": border_color,
+                    "backgroundColor": background_color,
                     "tension": 0.3,
                     "pointRadius": 4,
                 }]
             },
             "options": {
                 "scales": {
-                    "y": {"title": {"display": True, "text": "lbs"}}
+                    "y": {"title": {"display": True, "text": y_label}}
                 },
                 "plugins": {
                     "legend": {"display": False},
@@ -4440,10 +4514,15 @@ class TelegramAdapter(BasePlatformAdapter):
         if not history:
             await msg.reply_text(f"No history found for *{exercise}*.", parse_mode="Markdown")
             return
-        url = self._build_progress_chart_url(exercise, history)
-        best = max(history, key=lambda r: r["weight"])
-        bw = int(best["weight"]) if best["weight"] == int(best["weight"]) else best["weight"]
-        caption = f"📈 *{exercise}* — {len(history)} sessions\n🏆 Best: {bw} lbs × {best['reps']}"
+        is_cardio = "cardio:" in exercise.lower()
+        url = self._build_progress_chart_url(exercise, history, is_cardio=is_cardio)
+        if is_cardio:
+            best_min = max(r["reps"] for r in history)
+            caption = f"📈 *{exercise}* — {len(history)} sessions\n🏃 Most: {best_min} min"
+        else:
+            best = max(history, key=lambda r: r["weight"])
+            bw = int(best["weight"]) if best["weight"] == int(best["weight"]) else best["weight"]
+            caption = f"📈 *{exercise}* — {len(history)} sessions\n🏆 Best: {bw} lbs × {best['reps']}"
         try:
             await msg.reply_photo(photo=url, caption=caption, parse_mode="Markdown")
         except Exception as e:
@@ -4477,8 +4556,11 @@ class TelegramAdapter(BasePlatformAdapter):
             vol_str = f" · {int(total_vol):,} lbs" if total_vol > 0 else ""
             lines.append(f"*{date_str}* — {workout}{vol_str}")
             for r in rows:
-                w = int(r["weight"]) if r["weight"] and r["weight"] == int(r["weight"]) else r["weight"]
-                lines.append(f"  • {r['exercise']}: {w} lbs × {r['reps']} ({r['sets']} sets)")
+                if "cardio" in r["exercise"].lower():
+                    lines.append(f"  🏃 {r['exercise']}: {r['reps']} min")
+                else:
+                    w = int(r["weight"]) if r["weight"] and r["weight"] == int(r["weight"]) else r["weight"]
+                    lines.append(f"  • {r['exercise']}: {w} lbs × {r['reps']} ({r['sets']} sets)")
             lines.append("")
 
         nav = []
@@ -4503,13 +4585,17 @@ class TelegramAdapter(BasePlatformAdapter):
             if not exercises:
                 await update.message.reply_text("No workout history found yet.")
                 return
+            weight_exs = [nm for nm in exercises if "cardio" not in nm.lower()]
+            cardio_exs = [nm for nm in exercises if "cardio" in nm.lower()]
             from telegram import InlineKeyboardButton as _IKB, InlineKeyboardMarkup as _IKM
             rows_kb = []
-            for i in range(0, len(exercises), 2):
-                row_btns = [_IKB(exercises[i], callback_data=f"wk:progress:{exercises[i]}")]
-                if i + 1 < len(exercises):
-                    row_btns.append(_IKB(exercises[i + 1], callback_data=f"wk:progress:{exercises[i + 1]}"))
+            for i in range(0, len(weight_exs), 2):
+                row_btns = [_IKB(weight_exs[i], callback_data=f"wk:progress:{weight_exs[i]}")]
+                if i + 1 < len(weight_exs):
+                    row_btns.append(_IKB(weight_exs[i + 1], callback_data=f"wk:progress:{weight_exs[i + 1]}"))
                 rows_kb.append(row_btns)
+            if cardio_exs:
+                rows_kb.append([_IKB("🏃 Cardio", callback_data="wk:progress_cardio")])
             await update.message.reply_text("Choose an exercise to view progress:", reply_markup=_IKM(rows_kb))
             return
         await self._send_progress_chart(update.message, exercise)
@@ -4562,7 +4648,12 @@ class TelegramAdapter(BasePlatformAdapter):
         if s["most_trained"]:
             lines.append(f"💪 Most trained: *{s['most_trained']}*")
         if s["total_cardio"] > 0:
-            lines.append(f"🏃 Total cardio: *{s['total_cardio']} min*")
+            lines.append(f"🏃 *Cardio:* {s['total_cardio']} min total")
+            max_min = max(s["cardio_by_type"].values()) if s["cardio_by_type"] else 1
+            for ctype, mins in sorted(s["cardio_by_type"].items(), key=lambda x: -x[1]):
+                bar_len = max(1, int(mins / max_min * 10))
+                bar = "█" * bar_len
+                lines.append(f"  {bar} {ctype}: {mins} min")
         await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
     async def _send_weekly_digest(self, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4595,6 +4686,9 @@ class TelegramAdapter(BasePlatformAdapter):
         ]
         if total_vol > 0:
             lines.append(f"⚡ Total Volume: *{int(total_vol):,} lbs*")
+        cardio_week = sum(r["reps"] for r in week_rows if "cardio" in r.get("exercise", "").lower())
+        if cardio_week > 0:
+            lines.append(f"🏃 Cardio this week: *{cardio_week} min*")
         lines.append("━━━━━━━━━━━━━━━━━━━━━━")
         for ex, rows in by_ex.items():
             if "cardio" in ex.lower():
