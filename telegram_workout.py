@@ -4041,6 +4041,10 @@ class TelegramAdapter(BasePlatformAdapter):
             await self._cmd_history(update)
             return
 
+        if lower == "/prs" or lower.startswith("/prs@") or lower.startswith("/prs "):
+            await self._cmd_prs(update)
+            return
+
         if not self._should_process_message(update.message, is_command=True):
             return
         
@@ -4178,6 +4182,31 @@ class TelegramAdapter(BasePlatformAdapter):
                 if prev >= current_score:
                     return False
         return True
+
+    def _get_all_prs(self) -> list[dict]:
+        """Return all-time PR per exercise, sorted by date_set descending (newest first).
+        For ties on weight×reps, keeps the earliest occurrence (the original record)."""
+        history = self._read_log_history(limit=500)
+        best_by_ex: dict = {}
+        for row in history:
+            ex = row["exercise"]
+            if not ex or "cardio" in ex.lower() or row["weight"] <= 0 or row["reps"] <= 0:
+                continue
+            score = row["weight"] * row["reps"]
+            existing = best_by_ex.get(ex)
+            if existing is None or score > existing["_score"]:
+                best_by_ex[ex] = {
+                    "exercise": ex,
+                    "weight": row["weight"],
+                    "reps": row["reps"],
+                    "date": row["date"],
+                    "_score": score,
+                }
+        prs = list(best_by_ex.values())
+        for r in prs:
+            r.pop("_score", None)
+        prs.sort(key=lambda r: r["date"], reverse=True)
+        return prs
 
     def _get_next_day(self) -> tuple:
         """Return (next_day: str, days_ago: int | None) based on last logged session.
@@ -4331,6 +4360,23 @@ class TelegramAdapter(BasePlatformAdapter):
         text, keyboard = self._build_history_message(page=page)
         await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
+    async def _cmd_prs(self, update: Update) -> None:
+        """Handle /prs command — sends a Markdown list of all-time PRs, sorted by recency."""
+        prs = self._get_all_prs()
+        if not prs:
+            await update.message.reply_text("No PRs yet — log a workout to set your first record.")
+            return
+        lines = ["🏆 *Personal Records*", "━━━━━━━━━━━━━━━━━━━━━━"]
+        from datetime import date as _date
+        for r in prs:
+            w = int(r["weight"]) if r["weight"] == int(r["weight"]) else r["weight"]
+            try:
+                date_label = _date.fromisoformat(r["date"]).strftime("%-d %b")
+            except Exception:
+                date_label = r["date"]
+            lines.append(f"*{r['exercise']}* — {w} lbs × {r['reps']}  · set {date_label}")
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
     async def _send_weekly_digest(self, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Job callback: send weekly workout summary every Sunday at 20:00 UTC."""
         import os as _os
@@ -4370,6 +4416,19 @@ class TelegramAdapter(BasePlatformAdapter):
                 best = max(rows, key=lambda r: r["weight"] * r["reps"])
                 bw = int(best["weight"]) if best["weight"] and best["weight"] == int(best["weight"]) else best["weight"]
                 lines.append(f"💪 {ex}: best {bw} lbs × {best['reps']}")
+
+        # New records set this week (cap at 5 lines)
+        try:
+            new_prs = [p for p in self._get_all_prs() if p["date"] >= week_ago]
+            if new_prs:
+                lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+                lines.append("🏆 *New Records This Week*")
+                for p in new_prs[:5]:
+                    w = int(p["weight"]) if p["weight"] == int(p["weight"]) else p["weight"]
+                    lines.append(f"  • {p['exercise']}: {w} lbs × {p['reps']}")
+        except Exception:
+            pass
+
         msg_text = "\n".join(lines)
         for chat_id in chat_ids:
             try:
@@ -4471,6 +4530,13 @@ class TelegramAdapter(BasePlatformAdapter):
             await update.message.reply_text("⚠️ No exercises with data to log.")
             return
 
+        # Read history BEFORE append so PR detection compares against prior sessions only.
+        # (If we read after, the just-logged row matches itself in _is_new_pr and PRs never fire.)
+        try:
+            history = self._read_log_history()
+        except Exception:
+            history = []
+
         try:
             values_json = json.dumps(rows)
             cmd = f'HERMES_HOME=/opt/data/profiles/coding-premium {gapi} sheets append {sheet_id} "Sheet1!A:G" --values \'{values_json}\''
@@ -4483,12 +4549,6 @@ class TelegramAdapter(BasePlatformAdapter):
             logger.error("[Telegram] Workout log error: %s", e, exc_info=True)
             await update.message.reply_text("❌ Failed to log workout. Try again.")
             return
-
-        # Read history for PR detection (best-effort; never blocks the confirmation)
-        try:
-            history = self._read_log_history()
-        except Exception:
-            history = []
 
         # Build rich confirmation card
         total_volume = sum(w * r * s for _, w, r, s in logged_exercises)
