@@ -227,7 +227,7 @@
     .day-name { font-size: 14px; font-weight: 600; }
 
     /* Exercise Cards */
-    .exercises-wrap { padding: 12px 20px 8px; }
+    .exercises-wrap { padding: 12px 20px 0; }
     .exercise-card {
       background: var(--surface-raised); border: 1px solid var(--border);
       border-radius: var(--radius); padding: 14px; margin-bottom: 8px;
@@ -283,11 +283,7 @@
     .input-group input:disabled { opacity: 0.25; pointer-events: none; }
     .input-group input::placeholder { color: var(--border-active); font-weight: 400; }
 
-    /* Log Footer */
-    .log-footer {
-      flex-shrink: 0; padding: 10px 20px 20px;
-      background: var(--bg); border-top: 1px solid var(--border);
-    }
+    /* Cardio card (inside scroll-body now) */
     .cardio-card {
       background: var(--surface-raised); border: 1px solid var(--border);
       border-radius: var(--radius); padding: 14px; margin-bottom: 8px;
@@ -327,6 +323,7 @@
       cursor: pointer; font-family: inherit; transition: all var(--tr);
       user-select: none; display: flex; align-items: center; justify-content: center; gap: 10px;
       box-shadow: 0 4px 20px var(--accent-glow);
+      margin-top: 12px; margin-bottom: 20px;
     }
     .submit-btn:active { transform: scale(0.97); opacity: 0.9; }
     .submit-btn:disabled { opacity: 0.5; pointer-events: none; }
@@ -570,9 +567,7 @@
         </div>
 
         <div class="exercises-wrap" id="exercises"></div>
-      </div>
 
-      <div class="log-footer">
         <div class="cardio-card">
           <div class="cardio-title">🏃 Cardio</div>
           <div class="cardio-row">
@@ -1239,6 +1234,97 @@
         document.getElementById('submitBtn').disabled = false;
       }
     }
+
+    // ── Keyboard Avoidance ──
+    (function() {
+      const screenBody = document.querySelector('#screen-log .screen-body');
+      if (!screenBody) return;
+
+      let _keyboardFocusTarget = null;   // element that triggered keyboard
+      let _keyboardOpen = false;
+      let _savedPadding = '';
+
+      function setPadding(px) {
+        _savedPadding = screenBody.style.paddingBottom;
+        screenBody.style.paddingBottom = px + 'px';
+      }
+      function resetPadding() {
+        screenBody.style.paddingBottom = _savedPadding;
+        _savedPadding = '';
+      }
+      function scrollFocused() {
+        if (_keyboardOpen && _keyboardFocusTarget && _keyboardFocusTarget.isConnected) {
+          _keyboardFocusTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+
+      // Track which input was focused so we can scroll it once keyboard opens
+      screenBody.addEventListener('focusin', function(e) {
+        var t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
+          _keyboardFocusTarget = t;
+        }
+      }, true);
+
+      // Primary: Telegram SDK events (≥6.9)
+      var sdkSupported = isTelegram && typeof Tg.isVersionAtLeast === 'function' && Tg.isVersionAtLeast('6.9');
+
+      if (sdkSupported) {
+        Tg.onEvent('keyboardShown', function(e) {
+          _keyboardOpen = true;
+          var kbH = (e && typeof e.height === 'number') ? e.height : 0;
+          if (kbH > 0) {
+            setPadding(kbH);
+          }
+          scrollFocused();
+        });
+        Tg.onEvent('keyboardHidden', function() {
+          _keyboardOpen = false;
+          _keyboardFocusTarget = null;
+          resetPadding();
+        });
+        Tg.onEvent('viewportChanged', function(e) {
+          if (e && typeof e.isStateStable === 'boolean' && e.isStateStable) {
+            var newH = typeof e.height === 'number' ? e.height : 0;
+            if (newH > 0) {
+              // viewportHeight includes the visible area; infer keyboard from full height
+              // In inline mode we get the viewport directly, use it as-is for padding base
+              var inferredKb = Math.max(0, (window.innerHeight || 600) - newH);
+              if (inferredKb > 10) {
+                _keyboardOpen = true;
+                setPadding(inferredKb);
+                scrollFocused();
+              } else {
+                _keyboardOpen = false;
+                resetPadding();
+              }
+            }
+          }
+        });
+      } else if (window.visualViewport) {
+        // Fallback: browser preview path (or old SDK)
+        window.visualViewport.addEventListener('resize', function() {
+          var vv = window.visualViewport;
+          var kbH = Math.max(0, window.innerHeight - vv.height);
+          if (kbH > 10) {
+            _keyboardOpen = true;
+            setPadding(kbH);
+            scrollFocused();
+          } else {
+            _keyboardOpen = false;
+            resetPadding();
+          }
+        });
+      }
+
+      // Cleanup on page hide
+      window.addEventListener('beforeunload', resetPadding);
+      if (document.hidden !== undefined) {
+        document.addEventListener('visibilitychange', function() {
+          if (document.hidden) { _keyboardOpen = false; resetPadding(); }
+        });
+      }
+    })();
 
     // ── Init ──
     // Live volume recalculation on any exercise input change
